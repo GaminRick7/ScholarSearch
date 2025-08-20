@@ -15,11 +15,10 @@ node_modules/
 .next/
 out/
 dist/
-*.log
+*.logF
 
 # Environment files
 .env*
-!.env.example
 
 # Database
 *.db
@@ -47,11 +46,8 @@ htmlcov/
 data/
 datasets/
 *.csv
-*.json
 *.xlsx
 
-# ML models
-models/
 *.pkl
 *.h5
 
