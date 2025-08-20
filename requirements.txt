@@ -1,1 +1,19 @@
-fastapi[standard]
+# FastAPI and web framework
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+pydantic>=2.6.0
+python-multipart>=0.0.6
+
+# Database dependencies
+sqlalchemy>=2.0.0
+psycopg2-binary>=2.9.0
+alembic>=1.13.0
+
+# Vector database (basic connectivity only)
+chromadb>=0.4.0
+
+# Caching layer
+redis>=4.5.0
+
+# Environment configuration
+python-dotenv>=1.0.0

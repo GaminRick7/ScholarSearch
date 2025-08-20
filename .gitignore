@@ -1,7 +1,66 @@
-venv
-
-.DS_Store
-.idea
-venv
+# Python
 __pycache__/
+**/__pycache__/
 *.pyc
+*.pyo
+*.pyd
+.Python
+venv/
+env/
+.venv/
+.env
+
+# Node.js
+node_modules/
+.next/
+out/
+dist/
+*.log
+
+# Environment files
+.env*
+!.env.example
+
+# Database
+*.db
+*.sqlite
+chroma_db/
+chromadb/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+build/
+*.egg-info/
+.coverage
+htmlcov/
+
+# Data files
+data/
+datasets/
+*.csv
+*.json
+*.xlsx
+
+# ML models
+models/
+*.pkl
+*.h5
+
+# Logs
+logs/
+*.log
+
+# Temporary
+tmp/
+temp/
+*.tmp
+*.bak
