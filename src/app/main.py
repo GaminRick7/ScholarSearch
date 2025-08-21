@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 from typing import List, Dict
 from datetime import datetime
 import redis
+import time
+from pydantic import BaseModel
 
 # Import our new modules
 from .core.database import get_db, create_tables
@@ -212,6 +214,82 @@ async def create_papers(
         raise HTTPException(status_code=500, detail=f"Failed to create papers: {str(e)}")
 
 
+class SearchRequest(BaseModel):
+    query: str
+    page: int = 1
+    size: int = 20
+
+
+@app.post('/api/v1/search')
+async def search_papers(payload: SearchRequest, db: Session = Depends(get_db)):
+    """Semantic search using ChromaDB embeddings; returns a single page of results."""
+    try:
+        start = time.perf_counter()
+
+        # Single-page: ask Chroma for up to `size` results only
+        n_results = max(1, min(200, payload.size))
+        chroma_results = await chroma_service.query(query_texts=[payload.query], n_results=n_results)
+
+        ids_groups = chroma_results.get('ids') or []
+        distances_groups = chroma_results.get('distances') or []
+
+        matched_ids = ids_groups[0] if ids_groups else []
+        matched_distances = distances_groups[0] if distances_groups else []
+
+        # Single-page selection
+        selected_ids = matched_ids[:payload.size]
+        selected_distances = matched_distances[:payload.size]
+
+        if not selected_ids:
+            return {
+                "query": payload.query,
+                "total_results": 0,
+                "page": 1,
+                "size": payload.size,
+                "results": [],
+                "search_time_ms": (time.perf_counter() - start) * 1000.0,
+                "search_type": "semantic-bert",
+            }
+
+        # Fetch papers and preserve Chroma order
+        papers = db.query(Paper).filter(Paper.id.in_(selected_ids)).all()
+        paper_by_id = {str(p.id): p for p in papers}
+
+        results = []
+        for idx, pid in enumerate(selected_ids):
+            paper = paper_by_id.get(pid)
+            if not paper:
+                continue
+            score = selected_distances[idx] if idx < len(selected_distances) else None
+            author_names = [author.name for author in paper.authors]
+            results.append({
+                "paper_id": paper.id,
+                "title": paper.title,
+                "abstract": paper.abstract,
+                "authors": author_names,
+                "venue": paper.venue,
+                "year": paper.year,
+                "n_citation": paper.n_citation,
+                "score": score,
+                "search_type": "semantic-bert",
+            })
+
+        return {
+            "query": payload.query,
+            "total_results": len(results),
+            "page": 1,
+            "size": payload.size,
+            "results": results,
+            "search_time_ms": (time.perf_counter() - start) * 1000.0,
+            "search_type": "semantic-bert",
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
+
+
 @app.put("/api/v1/papers/{paper_id}")
 async def update_paper(
         paper_id: str,
@@ -260,32 +338,48 @@ async def add_papers_to_chroma(db: Session = Depends(get_db),):
     db.commit()
 
 
-@app.get('/query/{paper_id}')
-async def get_query(paper_id: str, db: Session = Depends(get_db)):
-    """Find papers similar to a specific paper using its ID"""
+@app.get('/query')
+async def get_query(q: str = Query(..., min_length=1), db: Session = Depends(get_db)):
+    """Search for papers similar to the provided text using ChromaDB, then fetch full paper records from the database."""
     try:
-        # get the query paper to extract its text
-        paper = db.query(Paper).filter_by(id=paper_id).first()
-        if not paper:
-            raise HTTPException(status_code=404, detail="Paper not found")
-        query_text = f"{paper.title}. {paper.abstract}"
-        
-        # Query ChromaDB for similar papers
-        results = await chroma_service.query(query_texts=[query_text], n_results=10)
-        
-        return {
-            "query_paper": {
+        chroma_results = await chroma_service.query(query_texts=[q], n_results=2)
+
+        ids_groups = chroma_results.get('ids') or []
+        distances_groups = chroma_results.get('distances') or []
+        documents_groups = chroma_results.get('documents') or []
+
+        matched_ids = ids_groups[0] if ids_groups else []
+        matched_distances = distances_groups[0] if distances_groups else []
+        matched_docs = documents_groups[0] if documents_groups else []
+
+        if not matched_ids:
+            return {"query": q, "total_results": 0, "results": []}
+
+        papers = db.query(Paper).filter(Paper.id.in_(matched_ids)).all()
+        paper_by_id = {str(p.id): p for p in papers}
+
+        results = []
+        for idx, pid in enumerate(matched_ids):
+            paper = paper_by_id.get(pid)
+            if not paper:
+                continue
+            score = matched_distances[idx] if idx < len(matched_distances) else None
+            results.append({
                 "id": paper.id,
                 "title": paper.title,
-                "abstract": paper.abstract
-            },
-            "similar_papers": results
-        }
-        
+                "abstract": paper.abstract,
+                "venue": paper.venue,
+                "year": paper.year,
+                "n_citation": paper.n_citation,
+                "score": score,
+            })
+
+        return {"query": q, "total_results": len(results), "results": results}
+
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to query similar papers: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to query papers: {str(e)}")
 
 
 @app.delete("/api/v1/papers/{paper_id}")
