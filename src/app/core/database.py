@@ -8,6 +8,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import QueuePool
 import os
 from dotenv import load_dotenv
+from sqlalchemy import text
 
 # Load environment variables
 load_dotenv()
@@ -52,4 +53,10 @@ def create_tables():
 
 def drop_tables():
     """Drop all tables in the database (use with caution!)"""
-    Base.metadata.drop_all(bind=engine)
+    # Use CASCADE to handle foreign key dependencies
+    with engine.connect() as conn:
+        conn.execute(text("DROP SCHEMA public CASCADE"))
+        conn.execute(text("CREATE SCHEMA public"))
+        conn.execute(text("GRANT ALL ON SCHEMA public TO scholarnet"))
+        conn.execute(text("GRANT ALL ON SCHEMA public TO public"))
+        conn.commit()

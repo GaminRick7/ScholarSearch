@@ -260,11 +260,32 @@ async def add_papers_to_chroma(db: Session = Depends(get_db),):
     db.commit()
 
 
-@app.get('/query/{query_text}')
-async def get_query(query_text: str):
-    results = await chroma_service.query(query_texts=[query_text], n_results=50)
-
-    return results
+@app.get('/query/{paper_id}')
+async def get_query(paper_id: str, db: Session = Depends(get_db)):
+    """Find papers similar to a specific paper using its ID"""
+    try:
+        # get the query paper to extract its text
+        paper = db.query(Paper).filter_by(id=paper_id).first()
+        if not paper:
+            raise HTTPException(status_code=404, detail="Paper not found")
+        query_text = f"{paper.title}. {paper.abstract}"
+        
+        # Query ChromaDB for similar papers
+        results = await chroma_service.query(query_texts=[query_text], n_results=10)
+        
+        return {
+            "query_paper": {
+                "id": paper.id,
+                "title": paper.title,
+                "abstract": paper.abstract
+            },
+            "similar_papers": results
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to query similar papers: {str(e)}")
 
 
 @app.delete("/api/v1/papers/{paper_id}")

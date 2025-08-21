@@ -1,150 +1,206 @@
 """
 Database initialization script for ScholarNet 2.0
 """
-import asyncio
+
 import logging
-from typing import List
-
+import asyncio
 from sqlalchemy.orm import Session
-from ..core.database import SessionLocal, create_tables, get_db
-from ..models.paper import Paper, Author
-from ..services.paper_service import PaperTemplate, AuthorTemplate
-from ..services.paper_service import PaperService
-
-import json
-from datetime import datetime
+import sys
 import os
+
+# Add the src directory to Python path for imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+
+from app.core.database import SessionLocal, create_tables, drop_tables
+from app.models.paper import Paper
+from app.services.paper_service import PaperService, PaperTemplate, AuthorTemplate
 
 logger = logging.getLogger(__name__)
 
-db_gen = get_db()   # this is a generator
-db = next(db_gen)   # this gives you the actual Session
-
-try:
-    paper_service = PaperService(db)
-    # call service methods here
-finally:
-    db_gen.close()  # this runs the generator's cleanup (db.close())
-
-
-
-async def init_db():
+async def init_db_async():
     """Initialize the database with tables and sample data"""
     try:
-        # Create tables
+        # Drop existing tables to ensure clean schema
+        logger.info("Dropping existing tables...")
+        drop_tables()
+        
+        # Create tables with new schema
         logger.info("Creating database tables...")
         create_tables()
         logger.info("Database tables created successfully")
-
+        
         # Check if data already exists
         db = SessionLocal()
         if db.query(Paper).count() > 0:
             logger.info("Database already contains data, skipping initialization")
             db.close()
             return
-
-        # Create sample data
+        
+        # Create sample data using bulk create
         logger.info("Creating sample data...")
-        await create_sample_data(db)
-        db.close()
-
+        create_sample_data(db)
+        
         logger.info("Database initialization completed successfully")
-
+        
     except Exception as e:
         logger.error(f"Database initialization failed: {e}")
         raise
 
+def init_db():
+    """Initialize the database with tables and sample data"""
+    asyncio.run(init_db_async())
 
-async def create_sample_data(db: Session):
-    """Create sample research papers data"""
-
-    # Create sample authors
-    authors = [
-        Author(
-            name="Yann LeCun",
-            email="yann.lecun@nyu.edu",
-            affiliation="New York University",
-            orcid="0000-0001-8663-5578"
-        ),
-        Author(
-            name="Yoshua Bengio",
-            email="yoshua.bengio@umontreal.ca",
-            affiliation="Université de Montréal",
-            orcid="0000-0002-8084-1234"
-        ),
-        Author(
-            name="Geoffrey Hinton",
-            email="geoffrey.hinton@utoronto.ca",
-            affiliation="University of Toronto",
-            orcid="0000-0001-8663-5579"
-        ),
-        Author(
-            name="Ashish Vaswani",
-            email="ashish.vaswani@google.com",
-            affiliation="Google Research",
-            orcid="0000-0001-8663-5580"
-        ),
-        Author(
-            name="Noam Shazeer",
-            email="noam.shazeer@google.com",
-            affiliation="Google Research",
-            orcid="0000-0001-8663-5581"
-        )
-    ]
-
-    for author in authors:
-        db.add(author)
-    db.flush()
-
-    # Create sample papers
-
-    example_papers: List[PaperTemplate] = [
+def create_sample_data(db: Session):
+    """Create sample research papers data using bulk create"""
+    
+    # Create paper templates for bulk insert
+    paper_templates = [
         PaperTemplate(
-            abstract="This paper introduces a novel graph neural network model for social network analysis.",
-            authors=[
-                AuthorTemplate(name="Alice Smith", affiliation="University of Toronto", orcid="0000-0001-2345-6789"),
-                AuthorTemplate(name="Bob Johnson", affiliation="MIT"),
-            ],
-            n_citation=23,
-            references=["paper_002", "paper_003"],
-            title="Graph Neural Networks for Social Network Analysis",
-            venue="Journal of Machine Learning Research",
             paper_id="paper_001",
-            is_stub=False
+            title="Deep Learning",
+            abstract="Deep learning allows computational models that are composed of multiple processing layers to learn representations of data with multiple levels of abstraction.",
+            venue="Nature",
+            n_citation=52000,
+            authors=[
+                AuthorTemplate(
+                    name="Yann LeCun",
+                    email="yann.lecun@nyu.edu",
+                    affiliation="New York University",
+                    orcid="0000-0001-8663-5578"
+                ),
+                AuthorTemplate(
+                    name="Yoshua Bengio",
+                    email="yoshua.bengio@umontreal.ca",
+                    affiliation="Université de Montréal",
+                    orcid="0000-0002-8084-1234"
+                ),
+                AuthorTemplate(
+                    name="Geoffrey Hinton",
+                    email="geoffrey.hinton@utoronto.ca",
+                    affiliation="University of Toronto",
+                    orcid="0000-0001-8663-5579"
+                )
+            ],
+            references=[]
         ),
         PaperTemplate(
-            abstract="We survey recent advances in natural language processing, focusing on transformer models.",
-            authors=[
-                AuthorTemplate(name="Carol White", affiliation="Stanford University"),
-            ],
-            n_citation=150,
-            references=["paper_001"],
-            title="A Survey of Transformer Architectures in NLP",
-            venue="ACL Conference",
             paper_id="paper_002",
-            is_stub=False
+            title="Attention Is All You Need",
+            abstract="The dominant sequence transduction models are based on complex recurrent or convolutional neural networks that include an encoder and a decoder.",
+            venue="NeurIPS",
+            n_citation=45000,
+            authors=[
+                AuthorTemplate(
+                    name="Ashish Vaswani",
+                    email="ashish.vaswani@google.com",
+                    affiliation="Google Research",
+                    orcid="0000-0001-8663-5580"
+                ),
+                AuthorTemplate(
+                    name="Noam Shazeer",
+                    email="noam.shazeer@google.com",
+                    affiliation="Google Research",
+                    orcid="0000-0001-8663-5581"
+                )
+            ],
+            references=["paper_001"]  # References Deep Learning
         ),
         PaperTemplate(
-            abstract="An empirical evaluation of recommendation systems for streaming services.",
-            authors=[
-                AuthorTemplate(name="David Lee", affiliation="Netflix Research"),
-                AuthorTemplate(name="Eve Kim", affiliation="University of Waterloo"),
-            ],
-            n_citation=75,
-            references=["paper_001", "paper_002"],
-            title="Evaluation of Recommender Systems in Streaming",
-            venue="KDD",
             paper_id="paper_003",
-            is_stub=False
+            title="BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding",
+            abstract="We introduce a new language representation model called BERT, which stands for Bidirectional Encoder Representations from Transformers.",
+            venue="NAACL",
+            n_citation=38000,
+            authors=[
+                AuthorTemplate(
+                    name="Ashish Vaswani",
+                    email="ashish.vaswani@google.com",
+                    affiliation="Google Research",
+                    orcid="0000-0001-8663-5580"
+                )
+            ],
+            references=["paper_002"]
+        ),
+        PaperTemplate(
+            paper_id="paper_004",
+            title="Generative Adversarial Networks",
+            abstract="We propose a new framework for estimating generative models via an adversarial process in which we simultaneously train two models.",
+            venue="NeurIPS",
+            n_citation=35000,
+            authors=[
+                AuthorTemplate(
+                    name="Yoshua Bengio",
+                    email="yoshua.bengio@umontreal.ca",
+                    affiliation="Université de Montréal",
+                    orcid="0000-0002-8084-1234"
+                )
+            ],
+            references=[]
+        ),
+        PaperTemplate(
+            paper_id="paper_005",
+            title="ResNet: Deep Residual Learning for Image Recognition",
+            abstract="Deeper neural networks are more difficult to train. We present a residual learning framework to ease the training of networks.",
+            venue="CVPR",
+            n_citation=42000,
+            authors=[
+                AuthorTemplate(
+                    name="Yann LeCun",
+                    email="yann.lecun@nyu.edu",
+                    affiliation="New York University",
+                    orcid="0000-0001-8663-5578"
+                )
+            ],
+            references=["paper_001"]
         )
     ]
+    
+    paper_service = PaperService(db)
+    
+    async def create_papers_async():
+        await paper_service.bulk_create_papers(papers=paper_templates)
+    
+    asyncio.run(create_papers_async())
+    
+    logger.info(f"Created {len(paper_templates)} sample papers using bulk create")
+    
+    await add_papers_to_chroma_async(db)
 
-    await paper_service.bulk_create_papers(papers=example_papers)
+async def add_papers_to_chroma_async(db: Session):
+    """Add papers to ChromaDB for vector search"""
+    try:
+        
+        # import here to avoid circular imports
+        from app.services.chroma_service import ChromaService
+        
+        chroma_service = ChromaService()
 
-    # Commit all changes
-    db.commit()
-    logger.info(f"Created {len(example_papers)} sample papers with {len(authors)} authors")
+        unembedded_papers = db.query(Paper).filter_by(in_chroma=False, is_stub=False).all()
+        
+        if not unembedded_papers:
+            logger.info("No new papers to add to ChromaDB")
+            return
 
+        paper_text = [f'{p.title}. {p.abstract}' for p in unembedded_papers]
+        paper_ids = [str(p.id) for p in unembedded_papers]
+        
+        logger.info(f"Adding {len(paper_text)} papers to ChromaDB...")
+        
+        # add documents to chromadb
+        await chroma_service.add_documents(paper_text=paper_text, paper_ids=paper_ids)
+        
+        for paper in unembedded_papers:
+            paper.in_chroma = True
+        
+        db.commit()
+        
+        logger.info(f"Successfully added {len(paper_text)} papers to ChromaDB with BERT embeddings")
+        
+    except Exception as e:
+        logger.error(f"Failed to add papers to ChromaDB: {e}")
 
 if __name__ == "__main__":
-    asyncio.run(init_db())
+    logging.basicConfig(level=logging.INFO)
+    
+    # Run initialization
+    init_db()
