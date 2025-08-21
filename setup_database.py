@@ -9,6 +9,7 @@ import subprocess
 import time
 import requests
 
+
 def check_docker():
     """Check if Docker is running"""
     try:
@@ -23,6 +24,7 @@ def check_docker():
         print("Docker is not installed")
         return False
 
+
 def check_docker_compose():
     """Check if Docker Compose is available"""
     try:
@@ -36,6 +38,7 @@ def check_docker_compose():
     except FileNotFoundError:
         print("Docker Compose is not installed")
         return False
+
 
 def start_services():
     """Start database services using Docker Compose"""
@@ -54,6 +57,7 @@ def start_services():
     except subprocess.CalledProcessError as e:
         print(f"Failed to start services: {e}")
         return False
+
 
 def check_service_health():
     """Check if all services are healthy"""
@@ -105,6 +109,7 @@ def check_service_health():
 
     return all_healthy
 
+
 def setup_python_environment():
     """Set up Python virtual environment and install dependencies"""
     print("\nSetting up Python environment...")
@@ -131,6 +136,7 @@ def setup_python_environment():
         print(f"Python environment setup failed: {e}")
         return False
 
+
 def initialize_database():
     """Initialize the database with tables and sample data"""
     print("\nInitializing database...")
@@ -149,6 +155,7 @@ def initialize_database():
     except subprocess.CalledProcessError as e:
         print(f"Database initialization failed: {e}")
         return False
+
 
 def create_env_file():
     """Create .env file from template"""
@@ -172,6 +179,7 @@ def create_env_file():
     except Exception as e:
         print(f"Failed to create environment file: {e}")
         return False
+
 
 def main():
     """Main setup function"""
@@ -231,6 +239,7 @@ def main():
     print("   It's ready for hybrid search: BM25 + BERT vectors with multi-stage retrieval.")
 
     return True
+
 
 if __name__ == "__main__":
     success = main()

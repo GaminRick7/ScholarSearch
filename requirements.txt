@@ -17,3 +17,6 @@ redis>=4.5.0
 
 # Environment configuration
 python-dotenv>=1.0.0
+
+# Package configuration
+setuptools

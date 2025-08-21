@@ -4,10 +4,11 @@ ChromaDB service for ScholarNet 2.0 - Basic connectivity only
 
 import chromadb
 from chromadb.config import Settings
-from typing import Dict, Any
+from typing import Dict, Any, List
 import logging
 
 logger = logging.getLogger(__name__)
+
 
 class ChromaService:
     """Basic ChromaDB service for connectivity and status"""
@@ -97,3 +98,18 @@ class ChromaService:
             'collection': self.collection.name if self.collection else None,
             'ready_for_future': True
         }
+
+    async def query(self, query_texts: List[str], n_results: int = 10):
+        results = self.collection.query(
+            query_texts=query_texts,
+            n_results=n_results
+        )
+
+        return results
+
+    async def add_documents(self, paper_ids: List[str], paper_text: List[str]):
+        if not paper_text or not paper_ids:
+            return
+
+        self.collection.upsert(documents=paper_text,
+                                     ids=paper_ids)  # upsert only adds a document if it doesn't already exist

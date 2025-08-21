@@ -88,6 +88,7 @@ source venv/bin/activate
 pip install -r requirements.txt
 echo "Python dependencies installed"
 
+
 # Check if frontend dependencies are installed
 if [ ! -d "visual-search-engine/node_modules" ]; then
     echo ""

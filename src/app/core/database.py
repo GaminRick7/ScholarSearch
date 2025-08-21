@@ -14,7 +14,7 @@ load_dotenv()
 
 # Database configuration
 DATABASE_URL = os.getenv(
-    "DATABASE_URL", 
+    "DATABASE_URL",
     "postgresql://scholarnet:scholarnet@localhost:5432/scholarnet"
 )
 
@@ -35,6 +35,7 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 # Create base class for models
 Base = declarative_base()
 
+
 def get_db():
     """Dependency to get database session"""
     db = SessionLocal()
@@ -43,9 +44,11 @@ def get_db():
     finally:
         db.close()
 
+
 def create_tables():
     """Create all tables in the database"""
     Base.metadata.create_all(bind=engine)
+
 
 def drop_tables():
     """Drop all tables in the database (use with caution!)"""
