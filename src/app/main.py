@@ -16,11 +16,22 @@ from .core.database import get_db, create_tables
 from .models.paper import Paper
 from .services.paper_service import PaperService, PaperTemplate
 from .services.chroma_service import ChromaService
+from .services.bm25_service import BM25Service
 
 # Initialize services at module level
 chroma_service = ChromaService()
 redis_client = redis.Redis(host='localhost', port=6379, db=0)
 redis_client.ping()  # Test connection
+
+# Initialize BM25 service (will be set up when first needed)
+bm25_service = None
+
+def get_bm25_service(db: Session = Depends(get_db)) -> BM25Service:
+    """Get BM25Service instance with database session"""
+    global bm25_service
+    if bm25_service is None:
+        bm25_service = BM25Service(db)
+    return bm25_service
 
 
 # Dependency functions for services
@@ -200,11 +211,20 @@ async def list_papers(
 @app.post("/api/v1/papers")
 async def create_papers(
         papers: List[PaperTemplate],
-        paper_service: PaperService = Depends(get_paper_service)
+        paper_service: PaperService = Depends(get_paper_service),
+        db: Session = Depends(get_db)
 ):
     """Create new papers"""
     try:
         await paper_service.bulk_create_papers(papers=papers)
+
+        # Add new papers to BM25 index
+        bm25 = get_bm25_service(db)
+        for paper_template in papers:
+            # Get the created paper from database
+            paper = db.query(Paper).filter_by(id=paper_template.paper_id).first()
+            if paper and not paper.is_stub:
+                bm25.add_paper(paper)
 
         return {
             "message": "Papers created successfully",
@@ -218,29 +238,39 @@ class SearchRequest(BaseModel):
     query: str
     page: int = 1
     size: int = 20
+    bert_weight: float = 2.0  # weight for BERT results (default: 2x)
 
 
 @app.post('/api/v1/search')
 async def search_papers(payload: SearchRequest, db: Session = Depends(get_db)):
-    """Semantic search using ChromaDB embeddings; returns a single page of results."""
+    """hybrid search combining BM25 keyword search and BERT semantic search"""
     try:
         start = time.perf_counter()
 
-        # Single-page: ask Chroma for up to `size` results only
-        n_results = max(1, min(200, payload.size))
+        # get BM25 results
+        bm25 = get_bm25_service(db)
+        bm25_results = await bm25.search(payload.query, payload.size * 2)  # get more for better fusion
+        
+        # get BERT results from ChromaDB
+        n_results = max(1, min(200, payload.size * 2))
         chroma_results = await chroma_service.query(query_texts=[payload.query], n_results=n_results)
-
+        
         ids_groups = chroma_results.get('ids') or []
         distances_groups = chroma_results.get('distances') or []
-
+        
         matched_ids = ids_groups[0] if ids_groups else []
         matched_distances = distances_groups[0] if distances_groups else []
-
-        # Single-page selection
-        selected_ids = matched_ids[:payload.size]
-        selected_distances = matched_distances[:payload.size]
-
-        if not selected_ids:
+        
+        # combine results using reciprocal rank fusion
+        combined_results = combine_bm25_and_bert(
+            bm25_results, 
+            matched_ids, 
+            matched_distances, 
+            payload.size,
+            payload.bert_weight
+        )
+        
+        if not combined_results:
             return {
                 "query": payload.query,
                 "total_results": 0,
@@ -248,40 +278,42 @@ async def search_papers(payload: SearchRequest, db: Session = Depends(get_db)):
                 "size": payload.size,
                 "results": [],
                 "search_time_ms": (time.perf_counter() - start) * 1000.0,
-                "search_type": "semantic-bert",
+                "search_type": "hybrid-bm25-bert",
             }
 
-        # Fetch papers and preserve Chroma order
-        papers = db.query(Paper).filter(Paper.id.in_(selected_ids)).all()
+        # fetch paper details for combined results
+        paper_ids = [result["paper_id"] for result in combined_results]
+        papers = db.query(Paper).filter(Paper.id.in_(paper_ids)).all()
         paper_by_id = {str(p.id): p for p in papers}
 
-        results = []
-        for idx, pid in enumerate(selected_ids):
-            paper = paper_by_id.get(pid)
-            if not paper:
-                continue
-            score = selected_distances[idx] if idx < len(selected_distances) else None
-            author_names = [author.name for author in paper.authors]
-            results.append({
-                "paper_id": paper.id,
-                "title": paper.title,
-                "abstract": paper.abstract,
-                "authors": author_names,
-                "venue": paper.venue,
-                "year": paper.year,
-                "n_citation": paper.n_citation,
-                "score": score,
-                "search_type": "semantic-bert",
-            })
+        # build final response preserving order
+        final_results = []
+        for result in combined_results:
+            paper = paper_by_id.get(result["paper_id"])
+            if paper:
+                author_names = [author.name for author in paper.authors]
+                final_results.append({
+                    "paper_id": paper.id,
+                    "title": paper.title,
+                    "abstract": paper.abstract,
+                    "authors": author_names,
+                    "venue": paper.venue,
+                    "year": paper.year,
+                    "n_citation": paper.n_citation,
+                    "score": result["hybrid_score"],
+                    "bm25_score": result.get("bm25_score"),
+                    "bert_score": result.get("bert_score"),
+                    "search_type": "hybrid-bm25-bert",
+                })
 
         return {
             "query": payload.query,
-            "total_results": len(results),
+            "total_results": len(final_results),
             "page": 1,
             "size": payload.size,
-            "results": results,
+            "results": final_results,
             "search_time_ms": (time.perf_counter() - start) * 1000.0,
-            "search_type": "semantic-bert",
+            "search_type": "hybrid-bm25-bert",
         }
 
     except HTTPException:
@@ -290,11 +322,76 @@ async def search_papers(payload: SearchRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
 
 
+def combine_bm25_and_bert(bm25_results: List[Dict], bert_ids: List[str], bert_distances: List[float], limit: int, bert_weight: float = 2.0) -> List[Dict]:
+    """combine BM25 and BERT results using reciprocal rank fusion with configurable weights"""
+    
+    # create lookup for BM25 results
+    bm25_lookup = {result["paper_id"]: result for result in bm25_results}
+    
+    # create lookup for BERT results
+    bert_lookup = {}
+    for idx, paper_id in enumerate(bert_ids):
+        if idx < len(bert_distances):
+            bert_lookup[paper_id] = {
+                "paper_id": paper_id,
+                "bert_score": bert_distances[idx],
+                "bert_rank": idx + 1
+            }
+    
+    # combine all unique papers
+    all_papers = set(bm25_lookup.keys()) | set(bert_lookup.keys())
+    
+    # calculate hybrid scores using weighted RRF
+    combined_results = []
+    for paper_id in all_papers:
+        bm25_data = bm25_lookup.get(paper_id, {})
+        bert_data = bert_lookup.get(paper_id, {})
+        
+        # get ranks (1-based)
+        bm25_rank = bm25_data.get("rank", len(bm25_results) + 1)
+        bert_rank = bert_data.get("bert_rank", len(bert_ids) + 1)
+        
+        # RRF formula: 1 / (60 + rank)
+        bm25_rrf = 1 / (60 + bm25_rank)
+        bert_rrf = 1 / (60 + bert_rank)
+        
+        # weighted hybrid score: BM25 + (BERT * weight)
+        hybrid_score = bm25_rrf + (bert_rrf * bert_weight)
+        
+        combined_results.append({
+            "paper_id": paper_id,
+            "hybrid_score": hybrid_score,
+            "bm25_score": bm25_data.get("score"),
+            "bert_score": bert_data.get("bert_score"),
+            "bm25_rank": bm25_rank,
+            "bert_rank": bert_rank,
+            "bm25_rrf": bm25_rrf,
+            "bert_rrf": bert_rrf,
+            "bert_weight": bert_weight
+        })
+    
+    # sort by hybrid score (descending) and return top results
+    combined_results.sort(key=lambda x: x["hybrid_score"], reverse=True)
+    return combined_results[:limit]
+
+
+
+@app.get('/api/v1/bm25/stats')
+async def bm25_stats(db: Session = Depends(get_db)):
+    """Get BM25 index statistics"""
+    try:
+        bm25_service = get_bm25_service(db)
+        return bm25_service.get_stats()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get BM25 stats: {str(e)}")
+
+
 @app.put("/api/v1/papers/{paper_id}")
 async def update_paper(
         paper_id: str,
         paper_data: dict,
-        paper_service: PaperService = Depends(get_paper_service)
+        paper_service: PaperService = Depends(get_paper_service),
+        db: Session = Depends(get_db)
 ):
     """Update an existing paper"""
     try:
@@ -302,6 +399,10 @@ async def update_paper(
 
         if not paper:
             raise HTTPException(status_code=404, detail="Paper not found")
+
+        # Update paper in BM25 index
+        bm25 = get_bm25_service(db)
+        bm25.update_paper(paper)
 
         return {
             "message": "Paper updated successfully",
@@ -394,6 +495,10 @@ async def delete_paper(
 
         if not success:
             raise HTTPException(status_code=404, detail="Paper not found")
+
+        # Remove paper from BM25 index
+        bm25 = get_bm25_service(db)
+        bm25.remove_paper(paper_id)
 
         return {
             "message": "Paper deleted successfully",
