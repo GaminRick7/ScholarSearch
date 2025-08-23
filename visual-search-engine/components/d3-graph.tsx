@@ -11,6 +11,11 @@ interface Node {
   id: string
   type: string
   connections: number
+  title?: string
+  abstract?: string
+  authors?: string
+  venue?: string
+  year?: number
   x?: number
   y?: number
   fx?: number | null
@@ -45,191 +50,115 @@ export function D3Graph({ data, width = 800, height = 600, onNodeClick }: D3Grap
     const svg = d3.select(svgRef.current)
     svg.selectAll("*").remove()
 
-    // Create responsive dimensions
-    const containerWidth = svgRef.current.clientWidth || width
-    const containerHeight = height
+    // Specify the dimensions of the chart
+    const chartWidth = 928
+    const chartHeight = 680
 
-    // Set up the simulation
-    const simulation = d3
-      .forceSimulation(data.nodes)
-      .force(
-        "link",
-        d3
-          .forceLink(data.links)
-          .id((d: any) => d.id)
-          .strength(0.3),
-      )
-      .force("charge", d3.forceManyBody().strength(-300))
-      .force("center", d3.forceCenter(containerWidth / 2, containerHeight / 2))
-      .force("collision", d3.forceCollide().radius(30))
+    // Specify the color scale
+    const color = d3.scaleOrdinal(d3.schemeCategory10)
+
+    // The force simulation mutates links and nodes, so create a copy
+    // so that re-evaluating this cell produces the same result
+    const links = data.links.map(d => ({...d}))
+    const nodes = data.nodes.map(d => ({...d}))
+
+    // Create a simulation with several forces
+    const simulation = d3.forceSimulation(nodes)
+      .force("link", d3.forceLink(links).id((d: any) => d.id))
+      .force("charge", d3.forceManyBody().strength((d: any) => -(d.connections)))
+      .force("x", d3.forceX())
+      .force("y", d3.forceY())
 
     // Create the SVG container
     const container = svg
-      .attr("width", containerWidth)
-      .attr("height", containerHeight)
-      .attr("viewBox", `0 0 ${containerWidth} ${containerHeight}`)
-      .style("background", "transparent")
+      .attr("width", chartWidth)
+      .attr("height", chartHeight)
+      .attr("viewBox", [-chartWidth / 2, -chartHeight / 2, chartWidth, chartHeight])
+      .style("max-width", "100%")
+      .style("height", "auto")
 
-    // Add zoom behavior
-    const zoom = d3
-      .zoom<SVGSVGElement, unknown>()
-      .scaleExtent([0.5, 3])
-      .on("zoom", (event) => {
-        g.attr("transform", event.transform)
-      })
-
-    svg.call(zoom)
-
-    const g = container.append("g")
-
-    // Create arrow markers for directed edges
-    const defs = g.append("defs")
-    defs
-      .append("marker")
-      .attr("id", "arrowhead")
-      .attr("viewBox", "0 -5 10 10")
-      .attr("refX", 25)
-      .attr("refY", 0)
-      .attr("orient", "auto")
-      .attr("markerWidth", 6)
-      .attr("markerHeight", 6)
-      .append("path")
-      .attr("d", "M0,-5L10,0L0,5")
-      .attr("fill", "hsl(var(--muted-foreground))")
-
-    // Create links
-    const link = g
-      .append("g")
-      .selectAll("line")
-      .data(data.links)
-      .enter()
-      .append("line")
-      .attr("stroke", "hsl(var(--border))")
-      .attr("stroke-width", (d: any) => Math.sqrt(d.strength * 3))
+    // Add a line for each link
+    const link = container.append("g")
+      .attr("stroke", "#999")
       .attr("stroke-opacity", 0.6)
-      .attr("marker-end", "url(#arrowhead)")
+      .selectAll("line")
+      .data(links)
+      .join("line")
+      .attr("stroke-width", (d: any) => Math.sqrt((d.strength || 1) * 3))
 
-    // Create node groups
-    const nodeGroup = g
-      .append("g")
-      .selectAll("g")
-      .data(data.nodes)
-      .enter()
-      .append("g")
-      .attr("class", "node-group")
+    // Add a circle for each node
+    const node = container.append("g")
+      .attr("stroke", "#fff")
+      .attr("stroke-width", 1.5)
+      .selectAll("circle")
+      .data(nodes)
+      .join("circle")
+      .attr("r", (d: any) => {
+        // Scale circle size based on citation count
+        const baseRadius = 5
+        const citationMultiplier = Math.min(d.connections || 0, 100) / 100
+        return baseRadius + (citationMultiplier * 8) // Range: 5 to 13
+      })
+      .attr("fill", (d: any) => {
+        if (d.type === "Citation Result") return "orange"
+        return color(d.type || "paper")
+      })
       .style("cursor", "pointer")
 
-    // Add circles for nodes
-    const node = nodeGroup
-      .append("circle")
-      .attr("r", (d) => {
-        if (d.type === "query") return 20
-        if (d.type === "related") return 15
-        if (d.type === "subtopic") return 12
-        return 10
-      })
-      .attr("fill", (d) => {
-        if (d.type === "query") return "hsl(var(--primary))"
-        if (d.type === "related") return "hsl(var(--secondary))"
-        if (d.type === "subtopic") return "hsl(var(--accent))"
-        return "hsl(var(--muted-foreground))"
-      })
-      .attr("stroke", "hsl(var(--background))")
-      .attr("stroke-width", 2)
-      .style("filter", "drop-shadow(0 2px 4px rgba(0,0,0,0.1))")
+    // Add title tooltip
+    node.append("title")
+      .text((d: any) => d.title || d.id)
 
-    // Add labels
-    const labels = nodeGroup
-      .append("text")
-      .text((d) => (d.id.length > 15 ? d.id.substring(0, 15) + "..." : d.id))
+    // Add citation count text in the center
+    const nodeText = container.append("g")
+      .selectAll("text")
+      .data(nodes)
+      .join("text")
       .attr("text-anchor", "middle")
       .attr("dy", ".35em")
-      .attr("font-size", (d) => {
-        if (d.type === "query") return "14px"
-        if (d.type === "related") return "12px"
-        return "10px"
-      })
-      .attr("font-weight", (d) => (d.type === "query" ? "bold" : "normal"))
-      .attr("fill", "hsl(var(--foreground))")
-      .style("pointer-events", "none")
-      .style("user-select", "none")
-
-    // Add connection count badges
-    const badges = nodeGroup
-      .append("circle")
-      .attr("r", 8)
-      .attr("cx", 15)
-      .attr("cy", -15)
-      .attr("fill", "hsl(var(--primary))")
-      .attr("stroke", "hsl(var(--background))")
-      .attr("stroke-width", 2)
-
-    nodeGroup
-      .append("text")
-      .text((d) => d.connections)
-      .attr("x", 15)
-      .attr("y", -15)
-      .attr("text-anchor", "middle")
-      .attr("dy", ".35em")
-      .attr("font-size", "10px")
+      .attr("font-size", "8px")
       .attr("font-weight", "bold")
-      .attr("fill", "hsl(var(--primary-foreground))")
+      .attr("fill", "white")
       .style("pointer-events", "none")
+      .text((d: any) => d.connections)
 
     // Add hover effects
-    nodeGroup
-      .on("mouseenter", function (event, d) {
+    node
+      .on("mouseenter", function(event, d) {
         d3.select(this)
-          .select("circle")
           .transition()
           .duration(200)
           .attr("r", (d: any) => {
-            if (d.type === "query") return 24
-            if (d.type === "related") return 18
-            if (d.type === "subtopic") return 15
-            return 12
+            const baseRadius = 5
+            const citationMultiplier = Math.min(d.connections || 0, 100) / 100
+            const normalSize = baseRadius + (citationMultiplier * 8)
+            return normalSize * 1.3 // 30% larger on hover
           })
           .style("filter", "drop-shadow(0 4px 8px rgba(0,0,0,0.2))")
       })
-      .on("mouseleave", function (event, d) {
+      .on("mouseleave", function(event, d) {
         d3.select(this)
-          .select("circle")
           .transition()
           .duration(200)
           .attr("r", (d: any) => {
-            if (d.type === "query") return 20
-            if (d.type === "related") return 15
-            if (d.type === "subtopic") return 12
-            return 10
+            const baseRadius = 5
+            const citationMultiplier = Math.min(d.connections || 0, 100) / 100
+            return baseRadius + (citationMultiplier * 8)
           })
-          .style("filter", "drop-shadow(0 2px 4px rgba(0,0,0,0.1))")
+          .style("filter", "none")
       })
       .on("click", (event, d) => {
         setSelectedNode(d)
         onNodeClick?.(d)
       })
 
-    // Add drag behavior
-    const drag = d3
-      .drag<SVGGElement, Node>()
-      .on("start", (event, d) => {
-        if (!event.active) simulation.alphaTarget(0.3).restart()
-        d.fx = d.x
-        d.fy = d.y
-      })
-      .on("drag", (event, d) => {
-        d.fx = event.x
-        d.fy = event.y
-      })
-      .on("end", (event, d) => {
-        if (!event.active) simulation.alphaTarget(0)
-        d.fx = null
-        d.fy = null
-      })
+    // Add a drag behavior
+    node.call(d3.drag()
+      .on("start", dragstarted)
+      .on("drag", dragged)
+      .on("end", dragended))
 
-    nodeGroup.call(drag)
-
-    // Update positions on simulation tick
+    // Set the position attributes of links and nodes each time the simulation ticks
     simulation.on("tick", () => {
       link
         .attr("x1", (d: any) => d.source.x)
@@ -237,8 +166,35 @@ export function D3Graph({ data, width = 800, height = 600, onNodeClick }: D3Grap
         .attr("x2", (d: any) => d.target.x)
         .attr("y2", (d: any) => d.target.y)
 
-      nodeGroup.attr("transform", (d) => `translate(${d.x},${d.y})`)
+      node
+        .attr("cx", (d: any) => d.x)
+        .attr("cy", (d: any) => d.y)
+
+      nodeText
+        .attr("x", (d: any) => d.x)
+        .attr("y", (d: any) => d.y)
     })
+
+    // Reheat the simulation when drag starts, and fix the subject position
+    function dragstarted(event: any) {
+      if (!event.active) simulation.alphaTarget(0.3).restart()
+      event.subject.fx = event.subject.x
+      event.subject.fy = event.subject.y
+    }
+
+    // Update the subject (dragged node) position during drag
+    function dragged(event: any) {
+      event.subject.fx = event.x
+      event.subject.fy = event.y
+    }
+
+    // Restore the target alpha so the simulation cools after dragging ends
+    // Unfix the subject position now that it's no longer being dragged
+    function dragended(event: any) {
+      if (!event.active) simulation.alphaTarget(0)
+      event.subject.fx = null
+      event.subject.fy = null
+    }
 
     // Cleanup function
     return () => {
@@ -248,7 +204,7 @@ export function D3Graph({ data, width = 800, height = 600, onNodeClick }: D3Grap
 
   return (
     <div className="relative w-full">
-      <svg ref={svgRef} className="w-full border rounded-lg bg-card" style={{ height: `${height}px` }} />
+      <svg ref={svgRef} className="w-full h-full border rounded-lg bg-card" style={{ height: `${height}px` }} />
 
       {/* Node Details Modal */}
       {selectedNode && (
@@ -261,7 +217,46 @@ export function D3Graph({ data, width = 800, height = 600, onNodeClick }: D3Grap
                   <X className="w-4 h-4" />
                 </Button>
               </div>
-              <h3 className="font-semibold mb-2">{selectedNode.id}</h3>
+              <h3 className="font-semibold mb-2">{selectedNode.title || selectedNode.id}</h3>
+              
+              {/* Paper metadata */}
+              <div className="flex flex-wrap gap-2 mb-3">
+                {selectedNode.authors && (
+                  <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                    <span className="font-medium">Authors:</span>
+                    <span>
+                      {(() => {
+                        const authors = String(selectedNode.authors);
+                        const authorList = authors.split(',').map(a => a.trim());
+                        if (authorList.length <= 2) {
+                          return authorList.join(', ');
+                        } else {
+                          return `${authorList.slice(0, 2).join(', ')} +${authorList.length - 2} more`;
+                        }
+                      })()}
+                    </span>
+                  </div>
+                )}
+                {selectedNode.venue && (
+                  <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                    <span className="font-medium">Venue:</span>
+                    <span>{selectedNode.venue}</span>
+                  </div>
+                )}
+                {selectedNode.year && (
+                  <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                    <span className="font-medium">Year:</span>
+                    <span>{selectedNode.year}</span>
+                  </div>
+                )}
+              </div>
+              
+              {selectedNode.abstract && (
+                <p className="text-sm text-muted-foreground mb-3 line-clamp-3">
+                  {selectedNode.abstract}
+                </p>
+              )}
+              
               <p className="text-sm text-muted-foreground mb-3">{selectedNode.connections} connections in the graph</p>
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <Info className="w-3 h-3" />
@@ -276,53 +271,74 @@ export function D3Graph({ data, width = 800, height = 600, onNodeClick }: D3Grap
 }
 
 // Helper function to generate graph data from search results
-export function generateGraphData(searchResults: any): GraphData {
-  const nodes: Node[] = searchResults.nodes.map((node: any) => ({
-    ...node,
-    x: Math.random() * 400 + 200,
-    y: Math.random() * 300 + 150,
-  }))
-
-  const links: Link[] = []
-  const queryNode = nodes.find((n) => n.type === "query")
-
-  if (queryNode) {
-    // Connect query node to all other nodes
-    nodes.forEach((node) => {
-      if (node.id !== queryNode.id) {
-        links.push({
-          source: queryNode.id,
-          target: node.id,
-          strength: node.type === "related" ? 0.8 : 0.5,
-        })
-      }
-    })
-
-    // Add some connections between related nodes
-    const relatedNodes = nodes.filter((n) => n.type === "related")
-    for (let i = 0; i < relatedNodes.length - 1; i++) {
-      if (Math.random() > 0.5) {
-        links.push({
-          source: relatedNodes[i].id,
-          target: relatedNodes[i + 1].id,
-          strength: 0.3,
-        })
-      }
-    }
-
-    // Connect subtopics to related topics
-    const subtopicNodes = nodes.filter((n) => n.type === "subtopic")
-    subtopicNodes.forEach((subtopic) => {
-      const randomRelated = relatedNodes[Math.floor(Math.random() * relatedNodes.length)]
-      if (randomRelated) {
-        links.push({
-          source: randomRelated.id,
-          target: subtopic.id,
-          strength: 0.4,
-        })
-      }
-    })
+export function generateGraphData(searchResults: any[]): GraphData {
+  if (!searchResults || searchResults.length === 0) {
+    return { nodes: [], links: [] }
   }
 
-  return { nodes, links }
+  // Convert search results to nodes
+  const nodes: Node[] = searchResults.map((paper, index) => ({
+    id: paper.id || `paper_${index}`,
+    type: "Top Result",
+    connections: paper.citations || paper.reference_count || Math.floor(Math.random() * 100) + 10,
+    title: paper.title || paper.name || `Paper ${index + 1}`,
+    abstract: paper.abstract || paper.summary || paper.description || undefined,
+    authors: paper.authors || paper.author || paper.creator || undefined,
+    venue: paper.venue || paper.journal || paper.conference || "Unknown",
+    year: paper.year || paper.publication_year || 2023,
+    x: 0, // Will be set by D3 force simulation
+    y: 0
+  }))
+
+  // Create citation papers for each result
+  const citationNodes: Node[] = []
+  const citationLinks: Link[] = []
+  
+  nodes.forEach((resultNode, index) => {
+    // Generate 3 citation papers for each result
+    for (let i = 0; i < 3; i++) {
+      const citationId = `citation_${resultNode.id}_${i}`
+      const citationNode: Node = {
+        id: citationId,
+        type: "Citation Result",
+        connections: Math.floor(Math.random() * 200) + 50, // Random citation count 50-250
+        title: `${resultNode.title|| resultNode.id}`,
+        abstract: resultNode.abstract || `Related work on ${resultNode.title?.substring(0, 50) || resultNode.id}`,
+        authors: `Author ${i + 1}, Author ${i + 2}`,
+        venue: `Journal ${i + 1}`,
+        year: (resultNode.year || 2023) + Math.floor(Math.random() * 3) - 1, // ±1 year from cited paper
+        x: 0,
+        y: 0
+      }
+      citationNodes.push(citationNode)
+      
+      // Create link from citation paper TO the result paper (citation relationship)
+      citationLinks.push({
+        source: citationId,
+        target: resultNode.id,
+        strength: 0.8
+      })
+    }
+  })
+  
+  // Combine all nodes and links
+  const allNodes = [...nodes, ...citationNodes]
+  const allLinks = citationLinks
+  
+  // Create some additional connections between citation papers for variety
+  for (let i = 0; i < citationNodes.length - 1; i++) {
+    if (Math.random() > 0.7) { // 30% chance of connection
+      allLinks.push({
+        source: citationNodes[i].id,
+        target: citationNodes[i + 1].id,
+        strength: Math.random() * 0.3 + 0.2
+      })
+    }
+  }
+
+  console.log(`Generated graph with ${allNodes.length} nodes and ${allLinks.length} links`)
+  console.log('Sample node:', allNodes[0])
+  console.log('Sample link:', allLinks[0])
+
+  return { nodes: allNodes, links: allLinks }
 }

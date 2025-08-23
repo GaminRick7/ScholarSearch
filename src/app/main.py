@@ -20,8 +20,62 @@ from .services.bm25_service import BM25Service
 
 # Initialize services at module level
 chroma_service = ChromaService()
-redis_client = redis.Redis(host='localhost', port=6379, db=0)
-redis_client.ping()  # Test connection
+
+# Redis configuration with Docker support
+import os
+REDIS_HOST = os.getenv('REDIS_HOST', 'localhost')
+REDIS_PORT = int(os.getenv('REDIS_PORT', 6379))
+REDIS_DB = int(os.getenv('REDIS_DB', 0))
+
+redis_client = redis.Redis(
+    host=REDIS_HOST, 
+    port=REDIS_PORT, 
+    db=REDIS_DB,
+    decode_responses=True,  # Automatically decode responses to strings
+    socket_connect_timeout=5,  # 5 second connection timeout
+    socket_timeout=5,  # 5 second socket timeout
+    retry_on_timeout=True,  # Retry on timeout
+    health_check_interval=30  # Health check every 30 seconds
+)
+
+# Test Redis connection
+try:
+    redis_client.ping()
+    print(f"✅ Connected to Redis at {REDIS_HOST}:{REDIS_PORT}")
+except Exception as e:
+    print(f"⚠️ Redis connection failed: {e}")
+    print("   Make sure Redis is running (docker-compose up redis)")
+    print("   Or set REDIS_HOST/REDIS_PORT environment variables")
+
+# Cache performance tracking
+cache_stats = {
+    "hits": 0,
+    "misses": 0,
+    "total_requests": 0
+}
+
+def log_cache_hit(cache_key: str):
+    """Log cache hit and update statistics"""
+    cache_stats["hits"] += 1
+    cache_stats["total_requests"] += 1
+    print(f"Cache HIT: {cache_key}")
+
+def log_cache_miss(cache_key: str):
+    """Log cache miss and update statistics"""
+    cache_stats["misses"] += 1
+    cache_stats["total_requests"] += 1
+    print(f"Cache MISS: {cache_key}")
+
+def get_cache_stats():
+    """Get current cache statistics"""
+    total = cache_stats["total_requests"]
+    hit_rate = (cache_stats["hits"] / total * 100) if total > 0 else 0
+    return {
+        "hits": cache_stats["hits"],
+        "misses": cache_stats["misses"],
+        "total_requests": total,
+        "hit_rate_percent": round(hit_rate, 2)
+    }
 
 # Initialize BM25 service (will be set up when first needed)
 bm25_service = None
@@ -75,8 +129,14 @@ async def root():
         "version": "2.0.0",
         "status": "running",
         "docs": "/docs",
-        "features": ["PostgreSQL", "ChromaDB", "Redis", "Hybrid Search (BM25 + BERT)"],
-        "search_plan": "Multi-stage retrieval with BM25 + BERT vectors, result fusion, and enhanced ranking"
+        "features": ["PostgreSQL", "ChromaDB", "Redis", "Hybrid Search (BM25 + BERT)", "Redis Caching"],
+        "search_plan": "Multi-stage retrieval with BM25 + BERT vectors, result fusion, enhanced ranking, and Redis caching for performance",
+        "cache_endpoints": {
+            "status": "/api/v1/cache/status",
+            "clear_all": "/api/v1/cache/clear",
+            "clear_specific": "/api/v1/cache/clear/{cache_key}",
+            "warm": "/api/v1/cache/warm"
+        }
     }
 
 
@@ -119,6 +179,141 @@ async def health_check():
         "search_engine_status": chroma_status,
         "cache_status": redis_status
     }
+
+
+@app.get("/api/v1/cache/status")
+async def cache_status():
+    """Get cache status and statistics"""
+    try:
+        # Get Redis info
+        redis_info = redis_client.info()
+        
+        # Count search caches
+        search_keys = redis_client.keys("search:*")
+        search_cache_count = len(search_keys)
+        
+        # Get memory usage
+        memory_usage = redis_info.get('used_memory_human', 'Unknown')
+        
+        # Get cache performance stats
+        performance_stats = get_cache_stats()
+        
+        return {
+            "status": "healthy",
+            "redis_info": {
+                "version": redis_info.get('redis_version', 'Unknown'),
+                "memory_usage": memory_usage,
+                "connected_clients": redis_info.get('connected_clients', 0),
+                "total_commands_processed": redis_info.get('total_commands_processed', 0)
+            },
+            "cache_stats": {
+                "search_caches": search_cache_count,
+                "total_keys": redis_info.get('db0', {}).get('keys', 0)
+            },
+            "performance": performance_stats,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        return {
+            "status": "unhealthy",
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+
+
+@app.delete("/api/v1/cache/clear")
+async def clear_cache():
+    """Clear all search caches"""
+    try:
+        search_keys = redis_client.keys("search:*")
+        if search_keys:
+            deleted_count = redis_client.delete(*search_keys)
+            return {
+                "message": f"Cleared {deleted_count} search caches",
+                "caches_cleared": deleted_count,
+                "timestamp": datetime.now().isoformat()
+            }
+        else:
+            return {
+                "message": "No search caches to clear",
+                "caches_cleared": 0,
+                "timestamp": datetime.now().isoformat()
+            }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to clear cache: {str(e)}")
+
+
+@app.delete("/api/v1/cache/clear/{cache_key}")
+async def clear_specific_cache(cache_key: str):
+    """Clear a specific cache by key"""
+    try:
+        # Ensure the key starts with 'search:' for security
+        if not cache_key.startswith('search:'):
+            raise HTTPException(status_code=400, detail="Invalid cache key format")
+        
+        deleted = redis_client.delete(cache_key)
+        if deleted:
+            return {
+                "message": f"Cache {cache_key} cleared successfully",
+                "cache_key": cache_key,
+                "timestamp": datetime.now().isoformat()
+            }
+        else:
+            return {
+                "message": f"Cache {cache_key} not found",
+                "cache_key": cache_key,
+                "timestamp": datetime.now().isoformat()
+            }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to clear cache: {str(e)}")
+
+
+@app.post("/api/v1/cache/warm")
+async def warm_cache():
+    """Warm up cache with popular search queries"""
+    try:
+        popular_queries = [
+            "machine learning",
+            "deep learning", 
+            "natural language processing",
+            "computer vision",
+            "artificial intelligence",
+            "neural networks",
+            "data science",
+            "big data",
+            "blockchain",
+            "cybersecurity"
+        ]
+        
+        warmed_count = 0
+        for query in popular_queries:
+            try:
+                # Create a search request for each popular query
+                search_request = SearchRequest(
+                    query=query,
+                    page=1,
+                    size=20,
+                    bert_weight=2.0,
+                    citation_weight=0.5
+                )
+                
+                # This will trigger the search and cache the results
+                await search_papers(search_request, db=next(get_db()))
+                warmed_count += 1
+                
+            except Exception as e:
+                print(f"Failed to warm cache for query '{query}': {e}")
+                continue
+        
+        return {
+            "message": f"Cache warming completed",
+            "queries_warmed": warmed_count,
+            "total_queries": len(popular_queries),
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Cache warming failed: {str(e)}")
 
 
 @app.get("/api/v1/papers/{paper_id}")
@@ -226,6 +421,16 @@ async def create_papers(
             if paper and not paper.is_stub:
                 bm25.add_paper(paper)
 
+        # Invalidate search caches when new papers are added
+        try:
+            # Clear all search caches since new papers might affect existing search results
+            search_keys = redis_client.keys("search:*")
+            if search_keys:
+                redis_client.delete(*search_keys)
+                print(f"Cleared {len(search_keys)} search caches after adding new papers")
+        except Exception as e:
+            print(f"Failed to clear search caches: {e}")
+
         return {
             "message": "Papers created successfully",
         }
@@ -239,14 +444,51 @@ class SearchRequest(BaseModel):
     page: int = 1
     size: int = 20
     bert_weight: float = 2.0  # weight for BERT results (default: 2x)
+    citation_weight: float = 0.5  # weight for citation count (default: 0.5x)
 
 
 @app.post('/api/v1/search')
 async def search_papers(payload: SearchRequest, db: Session = Depends(get_db)):
-    """hybrid search combining BM25 keyword search and BERT semantic search"""
+    """hybrid search combining BM25 keyword search and BERT semantic search with Redis caching"""
     try:
         start = time.perf_counter()
-
+        
+        # Generate cache key based on search parameters
+        import hashlib
+        import json
+        
+        # Create a unique cache key for this search
+        cache_params = {
+            "query": payload.query.lower().strip() if payload.query else "",
+            "page": payload.page,
+            "size": payload.size,
+            "bert_weight": round(payload.bert_weight, 2),
+            "citation_weight": round(payload.citation_weight, 2)
+        }
+        
+        # Create hash of parameters for cache key
+        try:
+            cache_key = f"search:{hashlib.md5(json.dumps(cache_params, sort_keys=True).encode()).hexdigest()}"
+        except Exception as e:
+            # Fallback to simple cache key if hashing fails
+            cache_key = f"search:{payload.query[:50]}:{payload.page}:{payload.size}"
+            print(f"Cache key generation failed, using fallback: {e}")
+        
+        # Check Redis cache first
+        try:
+            cached_result = redis_client.get(cache_key)
+            if cached_result:
+                cached_data = json.loads(cached_result)
+                # Add cache hit indicator
+                cached_data["cached"] = True
+                cached_data["cache_key"] = cache_key
+                log_cache_hit(cache_key)
+                return cached_data
+        except Exception as e:
+            # Log cache error but continue with search
+            print(f"Cache check failed: {e}")
+            log_cache_miss(cache_key)
+        
         # get BM25 results
         bm25 = get_bm25_service(db)
         bm25_results = await bm25.search(payload.query, payload.size * 2)  # get more for better fusion
@@ -267,31 +509,68 @@ async def search_papers(payload: SearchRequest, db: Session = Depends(get_db)):
             matched_ids, 
             matched_distances, 
             payload.size,
-            payload.bert_weight
+            payload.bert_weight,
+            payload.citation_weight
         )
         
         if not combined_results:
-            return {
+            result = {
                 "query": payload.query,
                 "total_results": 0,
                 "page": 1,
                 "size": payload.size,
                 "results": [],
                 "search_time_ms": (time.perf_counter() - start) * 1000.0,
-                "search_type": "hybrid-bm25-bert",
+                "search_type": "hybrid-bm25-bert-citations",
+                "cached": False,
+                "cache_key": cache_key
             }
+            
+            # Cache empty results for a shorter time
+            try:
+                redis_client.setex(cache_key, 300, json.dumps(result))  # 5 minutes for empty results
+            except Exception as e:
+                print(f"Failed to cache empty results: {e}")
+            
+            log_cache_miss(cache_key)
+            return result
 
         # fetch paper details for combined results
         paper_ids = [result["paper_id"] for result in combined_results]
         papers = db.query(Paper).filter(Paper.id.in_(paper_ids)).all()
         paper_by_id = {str(p.id): p for p in papers}
 
-        # build final response preserving order
+        # calculate citation statistics for normalization
+        citation_counts = [p.n_citation for p in papers if p.n_citation is not None]
+        max_citations = max(citation_counts) if citation_counts else 1
+        min_citations = min(citation_counts) if citation_counts else 0
+
+        # build final response with citation boost or citation-only sorting
         final_results = []
         for result in combined_results:
             paper = paper_by_id.get(result["paper_id"])
             if paper:
                 author_names = [author.name for author in paper.authors]
+                
+                # calculate citation boost (normalized between 0 and 1)
+                citation_count = paper.n_citation or 0
+                if max_citations > min_citations:
+                    citation_normalized = (citation_count - min_citations) / (max_citations - min_citations)
+                else:
+                    citation_normalized = 0.0
+                
+                # Check if we're at maximum citation weight (citation-only sorting)
+                if payload.citation_weight >= 1.0:
+                    # At maximum weight, sort purely by citation count
+                    final_score = citation_count
+                    citation_boost = citation_count  # Use actual citation count for display
+                    search_type = "citation-only-sorting"
+                else:
+                    # Normal hybrid scoring with citation boost
+                    citation_boost = citation_normalized * payload.citation_weight * 0.05
+                    final_score = result["hybrid_score"] + citation_boost
+                    search_type = "hybrid-bm25-bert-citations"
+                
                 final_results.append({
                     "paper_id": paper.id,
                     "title": paper.title,
@@ -300,21 +579,45 @@ async def search_papers(payload: SearchRequest, db: Session = Depends(get_db)):
                     "venue": paper.venue,
                     "year": paper.year,
                     "n_citation": paper.n_citation,
-                    "score": result["hybrid_score"],
+                    "score": final_score,
                     "bm25_score": result.get("bm25_score"),
                     "bert_score": result.get("bert_score"),
-                    "search_type": "hybrid-bm25-bert",
+                    "citation_boost": citation_boost,
+                    "citation_normalized": citation_normalized,
+                    "search_type": search_type,
                 })
 
-        return {
+        # Sort results by final score (descending)
+        final_results.sort(key=lambda x: x["score"], reverse=True)
+
+        result = {
             "query": payload.query,
             "total_results": len(final_results),
             "page": 1,
             "size": payload.size,
             "results": final_results,
             "search_time_ms": (time.perf_counter() - start) * 1000.0,
-            "search_type": "hybrid-bm25-bert",
+            "search_type": final_results[0]["search_type"] if final_results else "hybrid-bm25-bert-citations",
+            "cached": False,
+            "cache_key": cache_key
         }
+        
+        # Cache the search results
+        try:
+            # Determine TTL based on query characteristics
+            if len(final_results) > 0:
+                # Popular queries with results get longer cache time
+                ttl = 1800  # 30 minutes
+            else:
+                # Queries with no results get shorter cache time
+                ttl = 300   # 5 minutes
+                
+            redis_client.setex(cache_key, ttl, json.dumps(result))
+        except Exception as e:
+            print(f"Failed to cache search results: {e}")
+        
+        log_cache_miss(cache_key)
+        return result
 
     except HTTPException:
         raise
@@ -322,8 +625,8 @@ async def search_papers(payload: SearchRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
 
 
-def combine_bm25_and_bert(bm25_results: List[Dict], bert_ids: List[str], bert_distances: List[float], limit: int, bert_weight: float = 2.0) -> List[Dict]:
-    """combine BM25 and BERT results using reciprocal rank fusion with configurable weights"""
+def combine_bm25_and_bert(bm25_results: List[Dict], bert_ids: List[str], bert_distances: List[float], limit: int, bert_weight: float = 2.0, citation_weight: float = 0.5) -> List[Dict]:
+    """combine BM25 and BERT results using reciprocal rank fusion with configurable weights and citation boost"""
     
     # create lookup for BM25 results
     bm25_lookup = {result["paper_id"]: result for result in bm25_results}
@@ -367,7 +670,8 @@ def combine_bm25_and_bert(bm25_results: List[Dict], bert_ids: List[str], bert_di
             "bert_rank": bert_rank,
             "bm25_rrf": bm25_rrf,
             "bert_rrf": bert_rrf,
-            "bert_weight": bert_weight
+            "bert_weight": bert_weight,
+            "citation_weight": citation_weight
         })
     
     # sort by hybrid score (descending) and return top results
@@ -403,6 +707,16 @@ async def update_paper(
         # Update paper in BM25 index
         bm25 = get_bm25_service(db)
         bm25.update_paper(paper)
+
+        # Invalidate search caches when papers are updated
+        try:
+            # Clear all search caches since updated papers might affect existing search results
+            search_keys = redis_client.keys("search:*")
+            if search_keys:
+                redis_client.delete(*search_keys)
+                print(f"Cleared {len(search_keys)} search caches after updating paper {paper_id}")
+        except Exception as e:
+            print(f"Failed to clear search caches: {e}")
 
         return {
             "message": "Paper updated successfully",
@@ -499,6 +813,16 @@ async def delete_paper(
         # Remove paper from BM25 index
         bm25 = get_bm25_service(db)
         bm25.remove_paper(paper_id)
+
+        # Invalidate search caches when papers are deleted
+        try:
+            # Clear all search caches since deleted papers might affect existing search results
+            search_keys = redis_client.keys("search:*")
+            if search_keys:
+                redis_client.delete(*search_keys)
+                print(f"Cleared {len(search_keys)} search caches after deleting paper {paper_id}")
+        except Exception as e:
+            print(f"Failed to clear search caches: {e}")
 
         return {
             "message": "Paper deleted successfully",

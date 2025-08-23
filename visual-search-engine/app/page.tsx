@@ -19,21 +19,13 @@ export default function HomePage() {
   const [query, setQuery] = useState("")
   const [suggestions, setSuggestions] = useState<string[]>([])
   const [showSuggestions, setShowSuggestions] = useState(false)
-  const [apiStatus, setApiStatus] = useState<"checking" | "connected" | "disconnected">("checking")
+
 
   useEffect(() => {
     setMounted(true)
-    checkApiConnection()
   }, [])
 
-  const checkApiConnection = async () => {
-    try {
-      const isConnected = await apiService.testConnection()
-      setApiStatus(isConnected ? "connected" : "disconnected")
-    } catch {
-      setApiStatus("disconnected")
-    }
-  }
+
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -82,12 +74,7 @@ export default function HomePage() {
               <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
                 <Network className="w-5 h-5 text-primary-foreground" />
               </div>
-              <span className="font-bold text-xl">ScholarNet 2.0</span>
-              {apiStatus === "connected" && (
-                <Badge variant="secondary" className="ml-2 text-xs">
-                  API Connected
-                </Badge>
-              )}
+              <span className="font-bold text-xl">ScholarSearch 2.0</span>
             </div>
             <div className="flex items-center space-x-4">
               {mounted && (
@@ -95,23 +82,20 @@ export default function HomePage() {
                   {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
                 </Button>
               )}
-              <Button variant="outline" size="sm">
-                Sign In
-              </Button>
             </div>
           </div>
         </div>
       </nav>
 
-      <section className="pt-32 pb-20 px-4 sm:px-6 lg:px-8 relative z-10">
-        <div className="max-w-7xl mx-auto text-center">
+      <section className="min-h-screen pt-32 pb-20 px-4 sm:px-6 lg:px-8 relative z-10 flex items-center justify-center">
+        <div className="max-w-7xl mx-auto text-center my-auto">
           <Badge variant="secondary" className="mb-6">
             <Zap className="w-3 h-3 mr-1" />
             Powered by AI & Hybrid Search
           </Badge>
 
           <h1 className="text-4xl sm:text-6xl lg:text-7xl font-bold mb-6 leading-tight">
-            <span className="text-primary">ScholarNet</span> 2.0
+            <span className="text-primary">ScholarSearch</span> 2.0
           </h1>
 
           <p className="text-xl text-muted-foreground mb-8 max-w-2xl mx-auto leading-relaxed">
@@ -175,17 +159,7 @@ export default function HomePage() {
             </div>
           </div>
 
-          <div className="relative max-w-4xl mx-auto">
-            {/* API Status Indicator */}
-            <div className="text-center">
-              {apiStatus === "checking" && (
-                <p className="text-muted-foreground">Checking API connection...</p>
-              )}
-              {apiStatus === "disconnected" && (
-                <p className="text-destructive">API disconnected. Some features may be limited.</p>
-              )}
-            </div>
-          </div>
+
         </div>
       </section>
 

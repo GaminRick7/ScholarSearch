@@ -7,6 +7,8 @@ export interface SearchRequest {
   page?: number;
   size?: number;
   filters?: Record<string, any>;
+  bert_weight?: number;
+  citation_weight?: number;
 }
 
 export interface SearchResult {
@@ -20,6 +22,10 @@ export interface SearchResult {
   doi?: string;
   score: number;
   search_type: string;
+  citation_boost?: number;
+  citation_normalized?: number;
+  bm25_score?: number;
+  bert_score?: number;
 }
 
 export interface SearchResponse {
