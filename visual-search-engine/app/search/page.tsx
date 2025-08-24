@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Slider } from "@/components/ui/slider"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { ArrowLeft, Network, Search, Loader2, Moon, Sun, ExternalLink, Calendar, Users, TrendingUp, List, Network as NetworkIcon, Filter } from "lucide-react"
+import { ArrowLeft, Network, Search, Loader2, Moon, Sun, ExternalLink, Calendar, Users, TrendingUp, List, Network as NetworkIcon, Filter, BookOpen, Brain, Maximize2, X } from "lucide-react"
 import { useTheme } from "next-themes"
 import { D3Graph, generateGraphData } from "@/components/d3-graph"
 import { ParticlesBackground } from "@/components/particles-background"
@@ -29,6 +29,8 @@ export default function SearchPage() {
   const [viewMode, setViewMode] = useState<'list' | 'graph'>('list')
   const [citationWeight, setCitationWeight] = useState(0.5)
   const [isFiltersOpen, setIsFiltersOpen] = useState(false)
+  const [selectedPaper, setSelectedPaper] = useState<SearchResult | null>(null)
+  const [isPaperModalOpen, setIsPaperModalOpen] = useState(false)
 
   useEffect(() => {
     setMounted(true)
@@ -42,8 +44,13 @@ export default function SearchPage() {
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isFiltersOpen) {
-        setIsFiltersOpen(false)
+      if (e.key === 'Escape') {
+        if (isFiltersOpen) {
+          setIsFiltersOpen(false)
+        } else if (isPaperModalOpen) {
+          setIsPaperModalOpen(false)
+          setSelectedPaper(null)
+        }
       }
       if (e.key === 'f' && (e.ctrlKey || e.metaKey)) {
         e.preventDefault()
@@ -53,7 +60,7 @@ export default function SearchPage() {
 
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [isFiltersOpen])
+  }, [isFiltersOpen, isPaperModalOpen])
 
   const performSearch = async (searchQuery: string) => {
     setIsLoading(true)
@@ -123,9 +130,20 @@ export default function SearchPage() {
     setCitationWeight(0.5)
   }
 
+  const handlePaperModalOpen = (paper: SearchResult) => {
+    setSelectedPaper(paper)
+    setIsPaperModalOpen(true)
+  }
+
+  const handlePaperModalClose = () => {
+    setIsPaperModalOpen(false)
+    setSelectedPaper(null)
+  }
+
   const handleNodeClick = (node: any) => {
     console.log("Node clicked:", node)
-    // Here you could trigger a new search or show more details
+    // This function now only handles showing the mini modal in the graph
+    // The "View Details" button in the mini modal will call handlePaperModalOpen
   }
 
   const formatAuthors = (authors: string[]) => {
@@ -142,7 +160,7 @@ export default function SearchPage() {
     <div className="min-h-screen bg-background relative">
       <ParticlesBackground />
 
-      <nav className="fixed top-0 w-full z-50 bg-background/80 backdrop-blur-md border-b border-border">
+      <nav className="fixed top-0 w-full z-10 bg-background/80 backdrop-blur-md border-b border-border">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center space-x-4">
@@ -154,7 +172,7 @@ export default function SearchPage() {
                 <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
                   <Network className="w-5 h-5 text-primary-foreground" />
                 </div>
-                <span className="font-bold text-xl">ScholarNet 2.0</span>
+                <span className="font-bold text-xl">ScholarNet</span>
               </div>
             </div>
             <div className="flex items-center space-x-4">
@@ -169,7 +187,7 @@ export default function SearchPage() {
         </div>
       </nav>
 
-      <div className="pt-20 px-4 sm:px-6 lg:px-8 relative z-10">
+      <div className="pt-20 px-4 sm:px-6 lg:px-8 relative z-5">
         <div className="max-w-7xl mx-auto">
           <div className="mb-8">
             <form onSubmit={handleSearch} className="max-w-2xl mx-auto relative">
@@ -328,6 +346,164 @@ export default function SearchPage() {
             </div>
           )}
 
+          {/* Paper Details Modal */}
+          {isPaperModalOpen && (
+            <div className="fixed inset-0 z-[999999] bg-black/50 flex items-center justify-center p-4" style={{ zIndex: 999999 }}>
+              <div className="bg-background w-[85vw] max-w-6xl max-h-[90vh] overflow-y-auto rounded-lg border shadow-lg" style={{ zIndex: 999999 }}>
+                {selectedPaper ? (
+                  <>
+                    <div className="p-6 border-b border-border">
+                      <div className="flex items-center justify-between">
+                        <h2 className="text-2xl font-bold text-primary pr-4">
+                          {selectedPaper.title}
+                        </h2>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={handlePaperModalClose}
+                          className="h-8 w-8 p-0"
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                    
+                    <div className="p-6 space-y-6">
+                      {/* Paper Metadata */}
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-muted/30 rounded-lg">
+                        <div className="flex items-center space-x-2">
+                          <Calendar className="w-4 h-4 text-muted-foreground" />
+                          <span className="font-medium">Year:</span>
+                          <span className="text-base">{selectedPaper.year}</span>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <Users className="w-4 h-4 text-muted-foreground" />
+                          <span className="font-medium">Authors:</span>
+                          <span className="text-base">{selectedPaper.authors.length}</span>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <TrendingUp className="w-4 h-4 text-muted-foreground" />
+                          <span className="font-medium">Citations:</span>
+                          <span className="text-base">{selectedPaper.n_citation.toLocaleString()}</span>
+                        </div>
+                      </div>
+
+                      {/* Authors Section */}
+                      <div>
+                        <h3 className="text-lg font-semibold mb-3 flex items-center">
+                          <Users className="w-4 h-4 mr-2" />
+                          Authors
+                        </h3>
+                        <div className="flex flex-wrap gap-2">
+                          {selectedPaper.authors.map((author, index) => (
+                            <Badge key={index} variant="secondary" className="text-sm px-2 py-1">
+                              {author}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Venue Section */}
+                      <div>
+                        <h3 className="text-lg font-semibold mb-3 flex items-center">
+                          <BookOpen className="w-4 h-4 mr-2" />
+                          Publication Venue
+                        </h3>
+                        <p className="text-base text-muted-foreground">{selectedPaper.venue}</p>
+                      </div>
+
+                      {/* Abstract Section */}
+                      <div>
+                        <h3 className="text-lg font-semibold mb-3 flex items-center">
+                          <Brain className="w-4 h-4 mr-2" />
+                          Abstract
+                        </h3>
+                        <p className="text-base text-muted-foreground leading-relaxed whitespace-pre-wrap">
+                          {selectedPaper.abstract}
+                        </p>
+                      </div>
+
+                      {/* Actions */}
+                      <div className="flex items-center justify-between pt-4 border-t border-border">
+                        <div className="flex items-center space-x-2">
+                          <Button 
+                            variant="default" 
+                            size="default" 
+                            onClick={async () => {
+                              try {
+                                // Call the smart paper access API
+                                const response = await fetch('http://localhost:8000/api/v1/papers/access', {
+                                  method: 'POST',
+                                  headers: {
+                                    'Content-Type': 'application/json',
+                                  },
+                                  body: JSON.stringify({
+                                    title: selectedPaper.title,
+                                    authors: selectedPaper.authors
+                                  })
+                                });
+                                
+                                if (response.ok) {
+                                  const result = await response.json();
+                                  if (result.success) {
+                                    // Open the URL in a new tab
+                                    window.open(result.url, '_blank');
+                                  }
+                                } else {
+                                  // Fallback to direct DOI if available, otherwise Google Scholar
+                                  if (selectedPaper.doi) {
+                                    window.open(`https://doi.org/${selectedPaper.doi}`, '_blank');
+                                  } else {
+                                    const query = encodeURIComponent(`${selectedPaper.title} ${selectedPaper.authors.join(' ')}`);
+                                    window.open(`https://scholar.google.com/scholar?q=${query}`, '_blank');
+                                  }
+                                }
+                              } catch (error) {
+                                console.error('Failed to access paper:', error);
+                                // Fallback to direct DOI if available, otherwise Google Scholar
+                                if (selectedPaper.doi) {
+                                  window.open(`https://doi.org/${selectedPaper.doi}`, '_blank');
+                                } else {
+                                  const query = encodeURIComponent(`${selectedPaper.title} ${selectedPaper.authors.join(' ')}`);
+                                  window.open(`https://scholar.google.com/scholar?q=${query}`, '_blank');
+                                }
+                              }
+                            }}
+                          >
+                            <ExternalLink className="w-4 h-4 mr-2" />
+                            Access Paper
+                          </Button>
+                          <Button variant="outline" size="default" onClick={() => {
+                            // Copy paper title to clipboard
+                            navigator.clipboard.writeText(selectedPaper.title);
+                            // You can add a toast notification here if you have a toast system
+                            console.log('Paper title copied to clipboard');
+                          }}>
+                            Copy Title
+                          </Button>
+                        </div>
+                        
+                        <div className="flex items-center space-x-3">
+                          <span className="text-xs text-muted-foreground">
+                            Press <kbd className="px-1 py-0.5 bg-muted border rounded text-xs font-mono">Esc</kbd> to close
+                          </span>
+                          <Button size="default" onClick={handlePaperModalClose}>
+                            Close
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="py-12 text-center">
+                    <Loader2 className="w-12 h-12 animate-spin mx-auto mb-6 text-muted-foreground" />
+                    <p className="text-lg text-muted-foreground">Loading paper details...</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Error Display */}
           {error && (
             <div className="mb-6 p-4 bg-destructive/10 border border-destructive/20 rounded-lg">
@@ -400,8 +576,14 @@ export default function SearchPage() {
                           </div>
                         </div>
                         
-                        <h3 className="text-xl font-semibold mb-2 text-primary hover:text-primary/80 transition-colors">
-                          {paper.title}
+                        <h3 
+                          className="text-xl font-semibold mb-2 text-primary hover:text-primary/80 transition-colors cursor-pointer group"
+                          onClick={() => handlePaperModalOpen(paper)}
+                        >
+                          <span className="flex items-center">
+                            {paper.title}
+                            <Maximize2 className="w-4 h-4 ml-2 text-muted-foreground group-hover:text-primary/80 transition-colors" />
+                          </span>
                         </h3>
                         
                         <p className="text-muted-foreground mb-2">
@@ -428,7 +610,11 @@ export default function SearchPage() {
                             )}
                           </div>
                           
-                          <Button variant="ghost" size="sm">
+                          <Button 
+                            variant="ghost" 
+                            size="sm"
+                            onClick={() => handlePaperModalOpen(paper)}
+                          >
                             View Details
                           </Button>
                         </div>
@@ -442,6 +628,33 @@ export default function SearchPage() {
                   <D3Graph
                     data={generateGraphData(searchResults.results)}
                     onNodeClick={handleNodeClick}
+                    onViewDetails={(node) => {
+                      // Find the corresponding paper from search results and open the modal
+                      if (searchResults && node.title) {
+                        const paper = searchResults.results.find(p => 
+                          p.title === node.title || 
+                          p.paper_id === node.id
+                        )
+                        
+                        if (paper) {
+                          // Convert the node data to SearchResult format and open modal
+                          const paperData: SearchResult = {
+                            paper_id: paper.paper_id || node.id,
+                            title: paper.title || node.title,
+                            abstract: paper.abstract || node.abstract || '',
+                            authors: paper.authors || (node.authors ? String(node.authors).split(',').map(a => a.trim()) : []),
+                            venue: paper.venue || node.venue || '',
+                            year: paper.year || node.year || 2023,
+                            n_citation: paper.n_citation || node.connections || 0,
+                            doi: paper.doi,
+                            score: paper.score || 0,
+                            search_type: paper.search_type || 'graph-view'
+                          }
+                          
+                          handlePaperModalOpen(paperData)
+                        }
+                      }
+                    }}
                   />
                 </div>
               )}

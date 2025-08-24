@@ -38,9 +38,10 @@ interface D3GraphProps {
   width?: number
   height?: number
   onNodeClick?: (node: Node) => void
+  onViewDetails?: (node: Node) => void
 }
 
-export function D3Graph({ data, width = 800, height = 600, onNodeClick }: D3GraphProps) {
+export function D3Graph({ data, width = 800, height = 600, onNodeClick, onViewDetails }: D3GraphProps) {
   const svgRef = useRef<SVGSVGElement>(null)
   const [selectedNode, setSelectedNode] = useState<Node | null>(null)
 
@@ -258,6 +259,23 @@ export function D3Graph({ data, width = 800, height = 600, onNodeClick }: D3Grap
               )}
               
               <p className="text-sm text-muted-foreground mb-3">{selectedNode.connections} connections in the graph</p>
+              
+              {/* View Details Button */}
+              <div className="flex justify-center mb-3">
+                <Button 
+                  variant="default" 
+                  size="sm" 
+                  onClick={() => {
+                    if (onViewDetails) {
+                      onViewDetails(selectedNode)
+                    }
+                  }}
+                  className="w-full"
+                >
+                  View Details
+                </Button>
+              </div>
+              
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <Info className="w-3 h-3" />
                 Click and drag to move nodes around

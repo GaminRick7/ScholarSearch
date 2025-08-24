@@ -54,10 +54,10 @@ export function ParticlesBackground() {
         },
         particles: {
           color: {
-            value: theme === "dark" ? "#06b6d4" : "#0891b2", // cyan-500/600
+            value: theme === "dark" ? "#a855f7" : "#9333ea", // purple-500/600
           },
           links: {
-            color: theme === "dark" ? "#06b6d4" : "#0891b2",
+            color: theme === "dark" ? "#a855f7" : "#9333ea",
             distance: 150,
             enable: true,
             opacity: 0.3,

@@ -10,6 +10,8 @@ from datetime import datetime
 import redis
 import time
 from pydantic import BaseModel
+import requests
+from urllib.parse import quote
 
 # Import our new modules
 from .core.database import get_db, create_tables
@@ -875,6 +877,78 @@ async def chromadb_collection():
             "error": str(e),
             "ready_for_future": False
         }
+
+
+@app.post('/api/v1/papers/access')
+async def access_paper(request: dict):
+    """
+    Smart paper access endpoint that tries DOI first, then falls back to Google Scholar.
+    """
+    try:
+        title = request.get('title', '')
+        authors = request.get('authors', [])
+        
+        if not title:
+            raise HTTPException(status_code=400, detail="Paper title is required")
+        
+        # Try to find DOI via CrossRef API
+        primary_author = authors[0] if authors else ""
+        url = f"https://api.crossref.org/works?query.title={quote(title)}&query.author={quote(primary_author)}"
+        
+        try:
+            response = requests.get(url, timeout=10)
+            response.raise_for_status()
+            data = response.json()
+            
+            items = data.get('message', {}).get('items', [])
+            if items:
+                doi_title = items[0].get('title', [''])[0]
+                doi_url = items[0].get('URL', None)
+                
+                # Check if titles are similar (partial match)
+                if doi_url and _is_partial_match(title, doi_title):
+                    return {
+                        "success": True,
+                        "url": doi_url,
+                        "source": "doi",
+                        "message": "Found paper via DOI"
+                    }
+        except Exception as e:
+            print(f"CrossRef API error: {e}")
+            # Continue to fallback
+        
+        # Fallback to Google Scholar
+        author_query = f" {primary_author}" if primary_author else ""
+        scholar_query = f"{title}{author_query}"
+        encoded_query = quote(scholar_query)
+        google_scholar_url = f'https://scholar.google.com/scholar?q={encoded_query}'
+        
+        return {
+            "success": True,
+            "url": google_scholar_url,
+            "source": "google_scholar",
+            "message": "Redirecting to Google Scholar"
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to access paper: {str(e)}")
+
+
+def _is_partial_match(query_title: str, doi_title: str) -> bool:
+    """
+    Check if two titles are partially matching (case-insensitive).
+    """
+    query_words = set(query_title.lower().split())
+    doi_words = set(doi_title.lower().split())
+    
+    # Check if at least 60% of query words are in DOI title
+    if not query_words:
+        return False
+    
+    common_words = query_words.intersection(doi_words)
+    match_ratio = len(common_words) / len(query_words)
+    
+    return match_ratio >= 0.6
 
 
 if __name__ == "__main__":
