@@ -25,13 +25,14 @@ chroma_service = ChromaService()
 
 # Redis configuration with Docker support
 import os
+
 REDIS_HOST = os.getenv('REDIS_HOST', 'localhost')
 REDIS_PORT = int(os.getenv('REDIS_PORT', 6379))
 REDIS_DB = int(os.getenv('REDIS_DB', 0))
 
 redis_client = redis.Redis(
-    host=REDIS_HOST, 
-    port=REDIS_PORT, 
+    host=REDIS_HOST,
+    port=REDIS_PORT,
     db=REDIS_DB,
     decode_responses=True,  # Automatically decode responses to strings
     socket_connect_timeout=5,  # 5 second connection timeout
@@ -56,17 +57,20 @@ cache_stats = {
     "total_requests": 0
 }
 
+
 def log_cache_hit(cache_key: str):
     """Log cache hit and update statistics"""
     cache_stats["hits"] += 1
     cache_stats["total_requests"] += 1
     print(f"Cache HIT: {cache_key}")
 
+
 def log_cache_miss(cache_key: str):
     """Log cache miss and update statistics"""
     cache_stats["misses"] += 1
     cache_stats["total_requests"] += 1
     print(f"Cache MISS: {cache_key}")
+
 
 def get_cache_stats():
     """Get current cache statistics"""
@@ -79,8 +83,10 @@ def get_cache_stats():
         "hit_rate_percent": round(hit_rate, 2)
     }
 
+
 # Initialize BM25 service (will be set up when first needed)
 bm25_service = None
+
 
 def get_bm25_service(db: Session = Depends(get_db)) -> BM25Service:
     """Get BM25Service instance with database session"""
@@ -189,17 +195,17 @@ async def cache_status():
     try:
         # Get Redis info
         redis_info = redis_client.info()
-        
+
         # Count search caches
         search_keys = redis_client.keys("search:*")
         search_cache_count = len(search_keys)
-        
+
         # Get memory usage
         memory_usage = redis_info.get('used_memory_human', 'Unknown')
-        
+
         # Get cache performance stats
         performance_stats = get_cache_stats()
-        
+
         return {
             "status": "healthy",
             "redis_info": {
@@ -252,7 +258,7 @@ async def clear_specific_cache(cache_key: str):
         # Ensure the key starts with 'search:' for security
         if not cache_key.startswith('search:'):
             raise HTTPException(status_code=400, detail="Invalid cache key format")
-        
+
         deleted = redis_client.delete(cache_key)
         if deleted:
             return {
@@ -276,7 +282,7 @@ async def warm_cache():
     try:
         popular_queries = [
             "machine learning",
-            "deep learning", 
+            "deep learning",
             "natural language processing",
             "computer vision",
             "artificial intelligence",
@@ -286,7 +292,7 @@ async def warm_cache():
             "blockchain",
             "cybersecurity"
         ]
-        
+
         warmed_count = 0
         for query in popular_queries:
             try:
@@ -298,22 +304,22 @@ async def warm_cache():
                     bert_weight=2.0,
                     citation_weight=0.5
                 )
-                
+
                 # This will trigger the search and cache the results
                 await search_papers(search_request, db=next(get_db()))
                 warmed_count += 1
-                
+
             except Exception as e:
                 print(f"Failed to warm cache for query '{query}': {e}")
                 continue
-        
+
         return {
             "message": f"Cache warming completed",
             "queries_warmed": warmed_count,
             "total_queries": len(popular_queries),
             "timestamp": datetime.now().isoformat()
         }
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Cache warming failed: {str(e)}")
 
@@ -454,11 +460,11 @@ async def search_papers(payload: SearchRequest, db: Session = Depends(get_db)):
     """hybrid search combining BM25 keyword search and BERT semantic search with Redis caching"""
     try:
         start = time.perf_counter()
-        
+
         # Generate cache key based on search parameters
         import hashlib
         import json
-        
+
         # Create a unique cache key for this search
         cache_params = {
             "query": payload.query.lower().strip() if payload.query else "",
@@ -467,7 +473,7 @@ async def search_papers(payload: SearchRequest, db: Session = Depends(get_db)):
             "bert_weight": round(payload.bert_weight, 2),
             "citation_weight": round(payload.citation_weight, 2)
         }
-        
+
         # Create hash of parameters for cache key
         try:
             cache_key = f"search:{hashlib.md5(json.dumps(cache_params, sort_keys=True).encode()).hexdigest()}"
@@ -475,7 +481,7 @@ async def search_papers(payload: SearchRequest, db: Session = Depends(get_db)):
             # Fallback to simple cache key if hashing fails
             cache_key = f"search:{payload.query[:50]}:{payload.page}:{payload.size}"
             print(f"Cache key generation failed, using fallback: {e}")
-        
+
         # Check Redis cache first
         try:
             cached_result = redis_client.get(cache_key)
@@ -490,31 +496,31 @@ async def search_papers(payload: SearchRequest, db: Session = Depends(get_db)):
             # Log cache error but continue with search
             print(f"Cache check failed: {e}")
             log_cache_miss(cache_key)
-        
+
         # get BM25 results
         bm25 = get_bm25_service(db)
         bm25_results = await bm25.search(payload.query, payload.size * 2)  # get more for better fusion
-        
+
         # get BERT results from ChromaDB
         n_results = max(1, min(200, payload.size * 2))
         chroma_results = await chroma_service.query(query_texts=[payload.query], n_results=n_results)
-        
+
         ids_groups = chroma_results.get('ids') or []
         distances_groups = chroma_results.get('distances') or []
-        
+
         matched_ids = ids_groups[0] if ids_groups else []
         matched_distances = distances_groups[0] if distances_groups else []
-        
+
         # combine results using reciprocal rank fusion
         combined_results = combine_bm25_and_bert(
-            bm25_results, 
-            matched_ids, 
-            matched_distances, 
+            bm25_results,
+            matched_ids,
+            matched_distances,
             payload.size,
             payload.bert_weight,
             payload.citation_weight
         )
-        
+
         if not combined_results:
             result = {
                 "query": payload.query,
@@ -527,13 +533,13 @@ async def search_papers(payload: SearchRequest, db: Session = Depends(get_db)):
                 "cached": False,
                 "cache_key": cache_key
             }
-            
+
             # Cache empty results for a shorter time
             try:
                 redis_client.setex(cache_key, 300, json.dumps(result))  # 5 minutes for empty results
             except Exception as e:
                 print(f"Failed to cache empty results: {e}")
-            
+
             log_cache_miss(cache_key)
             return result
 
@@ -553,14 +559,14 @@ async def search_papers(payload: SearchRequest, db: Session = Depends(get_db)):
             paper = paper_by_id.get(result["paper_id"])
             if paper:
                 author_names = [author.name for author in paper.authors]
-                
+
                 # calculate citation boost (normalized between 0 and 1)
                 citation_count = paper.n_citation or 0
                 if max_citations > min_citations:
                     citation_normalized = (citation_count - min_citations) / (max_citations - min_citations)
                 else:
                     citation_normalized = 0.0
-                
+
                 # Check if we're at maximum citation weight (citation-only sorting)
                 if payload.citation_weight >= 1.0:
                     # At maximum weight, sort purely by citation count
@@ -572,7 +578,7 @@ async def search_papers(payload: SearchRequest, db: Session = Depends(get_db)):
                     citation_boost = citation_normalized * payload.citation_weight * 0.05
                     final_score = result["hybrid_score"] + citation_boost
                     search_type = "hybrid-bm25-bert-citations"
-                
+
                 final_results.append({
                     "paper_id": paper.id,
                     "title": paper.title,
@@ -604,7 +610,7 @@ async def search_papers(payload: SearchRequest, db: Session = Depends(get_db)):
             "cached": False,
             "cache_key": cache_key
         }
-        
+
         # Cache the search results
         try:
             # Determine TTL based on query characteristics
@@ -613,12 +619,12 @@ async def search_papers(payload: SearchRequest, db: Session = Depends(get_db)):
                 ttl = 1800  # 30 minutes
             else:
                 # Queries with no results get shorter cache time
-                ttl = 300   # 5 minutes
-                
+                ttl = 300  # 5 minutes
+
             redis_client.setex(cache_key, ttl, json.dumps(result))
         except Exception as e:
             print(f"Failed to cache search results: {e}")
-        
+
         log_cache_miss(cache_key)
         return result
 
@@ -628,12 +634,13 @@ async def search_papers(payload: SearchRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
 
 
-def combine_bm25_and_bert(bm25_results: List[Dict], bert_ids: List[str], bert_distances: List[float], limit: int, bert_weight: float = 2.0, citation_weight: float = 0.5) -> List[Dict]:
+def combine_bm25_and_bert(bm25_results: List[Dict], bert_ids: List[str], bert_distances: List[float], limit: int,
+                          bert_weight: float = 2.0, citation_weight: float = 0.5) -> List[Dict]:
     """combine BM25 and BERT results using reciprocal rank fusion with configurable weights and citation boost"""
-    
+
     # create lookup for BM25 results
     bm25_lookup = {result["paper_id"]: result for result in bm25_results}
-    
+
     # create lookup for BERT results
     bert_lookup = {}
     for idx, paper_id in enumerate(bert_ids):
@@ -643,27 +650,27 @@ def combine_bm25_and_bert(bm25_results: List[Dict], bert_ids: List[str], bert_di
                 "bert_score": bert_distances[idx],
                 "bert_rank": idx + 1
             }
-    
+
     # combine all unique papers
     all_papers = set(bm25_lookup.keys()) | set(bert_lookup.keys())
-    
+
     # calculate hybrid scores using weighted RRF
     combined_results = []
     for paper_id in all_papers:
         bm25_data = bm25_lookup.get(paper_id, {})
         bert_data = bert_lookup.get(paper_id, {})
-        
+
         # get ranks (1-based)
         bm25_rank = bm25_data.get("rank", len(bm25_results) + 1)
         bert_rank = bert_data.get("bert_rank", len(bert_ids) + 1)
-        
+
         # RRF formula: 1 / (60 + rank)
         bm25_rrf = 1 / (60 + bm25_rank)
         bert_rrf = 1 / (60 + bert_rank)
-        
+
         # weighted hybrid score: BM25 + (BERT * weight)
         hybrid_score = bm25_rrf + (bert_rrf * bert_weight)
-        
+
         combined_results.append({
             "paper_id": paper_id,
             "hybrid_score": hybrid_score,
@@ -676,11 +683,10 @@ def combine_bm25_and_bert(bm25_results: List[Dict], bert_ids: List[str], bert_di
             "bert_weight": bert_weight,
             "citation_weight": citation_weight
         })
-    
+
     # sort by hybrid score (descending) and return top results
     combined_results.sort(key=lambda x: x["hybrid_score"], reverse=True)
     return combined_results[:limit]
-
 
 
 @app.get('/api/v1/bm25/stats')
@@ -734,8 +740,7 @@ async def update_paper(
 
 
 @app.post('/api/v1/papers/vectors/')
-async def add_papers_to_chroma(db: Session = Depends(get_db),):
-
+async def add_papers_to_chroma(db: Session = Depends(get_db), ):
     # get all unembedded non-stub papers
     unembedded_papers = db.query(Paper).filter_by(in_chroma=False, is_stub=False)
 
@@ -880,6 +885,26 @@ async def chromadb_collection():
         }
 
 
+@app.get('/api/v1/suggest/{text}')
+async def suggest_search(text: str, db: Session = Depends(get_db)) -> list[str]:
+    suggestions = await chroma_service.query(
+        query_texts=[text],
+        n_results=5
+    )
+    paper_ids = []
+
+    if len(suggestions["ids"]) > 0:
+        for i in range(len(suggestions["ids"][0])):
+            if len(paper_ids) == 5:
+                break
+            elif suggestions["distances"][0][i] < 1.6:
+                paper_ids.append(suggestions["ids"][0][i])
+
+    suggestion_text = db.query(Paper).filter(Paper.id.in_(paper_ids)).all()
+
+    return [str(s.title) for s in suggestion_text]
+
+
 @app.post('/api/v1/papers/access')
 async def access_paper(request: dict):
     """
@@ -888,24 +913,24 @@ async def access_paper(request: dict):
     try:
         title = request.get('title', '')
         authors = request.get('authors', [])
-        
+
         if not title:
             raise HTTPException(status_code=400, detail="Paper title is required")
-        
+
         # Try to find DOI via CrossRef API
         primary_author = authors[0] if authors else ""
         url = f"https://api.crossref.org/works?query.title={quote(title)}&query.author={quote(primary_author)}"
-        
+
         try:
             response = requests.get(url, timeout=10)
             response.raise_for_status()
             data = response.json()
-            
+
             items = data.get('message', {}).get('items', [])
             if items:
                 doi_title = items[0].get('title', [''])[0]
                 doi_url = items[0].get('URL', None)
-                
+
                 # Check if titles are similar (partial match)
                 if doi_url and _is_partial_match(title, doi_title):
                     return {
@@ -917,20 +942,20 @@ async def access_paper(request: dict):
         except Exception as e:
             print(f"CrossRef API error: {e}")
             # Continue to fallback
-        
+
         # Fallback to Google Scholar
         author_query = f" {primary_author}" if primary_author else ""
         scholar_query = f"{title}{author_query}"
         encoded_query = quote(scholar_query)
         google_scholar_url = f'https://scholar.google.com/scholar?q={encoded_query}'
-        
+
         return {
             "success": True,
             "url": google_scholar_url,
             "source": "google_scholar",
             "message": "Redirecting to Google Scholar"
         }
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to access paper: {str(e)}")
 
@@ -941,14 +966,14 @@ def _is_partial_match(query_title: str, doi_title: str) -> bool:
     """
     query_words = set(query_title.lower().split())
     doi_words = set(doi_title.lower().split())
-    
+
     # Check if at least 60% of query words are in DOI title
     if not query_words:
         return False
-    
+
     common_words = query_words.intersection(doi_words)
     match_ratio = len(common_words) / len(query_words)
-    
+
     return match_ratio >= 0.6
 
 
