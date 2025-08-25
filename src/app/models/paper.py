@@ -27,6 +27,9 @@ class Paper(Base):
     # Citation count
     n_citation = Column(Integer, default=0, index=True)
 
+    # Paper access
+    doi = Column(String(255), nullable=True, index=True)
+
     in_chroma = Column(Boolean, default=False)
     is_stub = Column(Boolean, default=False)
 

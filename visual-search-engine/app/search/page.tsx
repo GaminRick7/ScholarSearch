@@ -439,7 +439,8 @@ export default function SearchPage() {
                                   },
                                   body: JSON.stringify({
                                     title: selectedPaper.title,
-                                    authors: selectedPaper.authors
+                                    authors: selectedPaper.authors,
+                                    paper_id: selectedPaper.paper_id
                                   })
                                 });
                                 

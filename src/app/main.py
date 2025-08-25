@@ -581,6 +581,7 @@ async def search_papers(payload: SearchRequest, db: Session = Depends(get_db)):
                     "venue": paper.venue,
                     "year": paper.year,
                     "n_citation": paper.n_citation,
+                    "doi": paper.doi,
                     "score": final_score,
                     "bm25_score": result.get("bm25_score"),
                     "bert_score": result.get("bert_score"),
