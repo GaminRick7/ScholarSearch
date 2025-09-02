@@ -242,7 +242,9 @@ export default function SearchPage() {
             <div className="pt-20 px-4 sm:px-6 lg:px-8 relative z-5">
                 <div className="max-w-7xl mx-auto">
                     <div className="mb-8">
-                        <form onSubmit={handleSearch} className="max-w-2xl mx-auto relative">
+                        <form onSubmit={handleSearch} className="max-w-2xl mx-auto relative"
+                              onFocus={() => setIsSearchFocused(true)}
+                              onBlur={() => setIsSearchFocused(false)}>
                             <div className="relative">
                                 <Search
                                     className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-muted-foreground"/>
@@ -251,8 +253,6 @@ export default function SearchPage() {
                                     placeholder="Search for research papers..."
                                     value={query}
                                     onChange={(e) => handleQueryChange(e.target.value)}
-                                    onFocus={() => setIsSearchFocused(true)}
-                                    onBlur={() => setIsSearchFocused(false)}
                                     className="pl-12 pr-24 h-14 text-lg rounded-full border-2 focus:border-primary transition-colors"
                                     disabled={isLoading}
                                 />
@@ -274,7 +274,7 @@ export default function SearchPage() {
                                     {suggestions.map((suggestion, index) => (
                                         <button
                                             key={index}
-                                            onClick={() => handleSuggestionClick(suggestion)}
+                                            onMouseDown={() => handleSuggestionClick(suggestion)}
                                             className="w-full text-left px-4 py-3 hover:cursor-pointer hover:bg-muted dark:hover:bg-gray-800 transition-colors first:rounded-t-lg last:rounded-b-lg"
                                         >
                                             {suggestion}
