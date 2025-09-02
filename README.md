@@ -47,6 +47,11 @@ pnpm dev       # or npm run dev
 # Frontend: http://localhost:3000
 ```
 
+Then, run the backend. In the `src` directory, run:
+```bash
+python run.py
+```
+
 ## Local Development (without Docker)
 Prerequisites: Python 3.11+, Node 18+/20+, PostgreSQL 15+, Redis 7+, ChromaDB server.
 
@@ -70,9 +75,9 @@ CHROMA_HOST=localhost
 CHROMA_PORT=8001
 ```
 
-3) Start backend (FastAPI)
+3) Start backend (FastAPI). In the `src` directory, run:
 ```bash
-python -m uvicorn src.app.main:app --reload --host 0.0.0.0 --port 8000
+python run.py
 ```
 
 4) Start frontend (Next.js)
