@@ -61,10 +61,15 @@ In the `src` directory, run:
 python run.py
 ```
 
+To load the database, you may either use your own data in line with src.app.models, or use the following CSV sourced from Kaggle: https://www.kaggle.com/datasets/nechbamohammed/research-papers-dataset. Place either csv file in the root directory.
+Next, initialize the database by navigating to `src.app.core` and running `init_db.py`. Ensure you have changed the variable `PAPERS_CSV_FILE` to the appropriate name of your CSV file in the root directory. 
+
+
 ## Local Development (without Docker)
 Prerequisites: Python 3.11+, Node 18+/20+, PostgreSQL 15+, Redis 7+, ChromaDB server.
 
 1) Python environment and deps
+In the root directory, start a python virtual environment and install requirements:
 ```bash
 python -m venv venv
 source venv/bin/activate
@@ -85,13 +90,6 @@ CHROMA_PORT=8001
 ```
 
 3) Start backend (FastAPI).
-In the root directory, start a python virtual environment and install requirements:
-```bash
-python -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-```
-
 In the `src` directory, run:
 ```bash
 python run.py
@@ -104,6 +102,9 @@ pnpm install && pnpm dev
 ```
 
 ## Data Ingestion and Embedding
+To load the database, you may either use your own data in line with src.app.models, or use the following CSV sourced from Kaggle: https://www.kaggle.com/datasets/nechbamohammed/research-papers-dataset. Place either csv file in the root directory.
+Next, initialize the database by navigating to `src.app.core` and running `init_db.py`. Ensure you have changed the variable `PAPERS_CSV_FILE` to the appropriate name of your CSV file in the root directory. 
+
 - Create/update papers via REST (see endpoints below). The BM25 index auto-builds and updates on changes.
 - Add vectors to ChromaDB for semantic search:
 ```bash
