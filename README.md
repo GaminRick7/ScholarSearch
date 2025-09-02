@@ -1,4 +1,4 @@
-# ScholarSearchV2 (ScholarNet 2.0)
+# ScholarSearch
 
 Discover the right papers faster: hybrid BM25 + BERT search with an interactive citation graph for research influence patterns.
 
