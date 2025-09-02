@@ -149,7 +149,10 @@ export default function HomePage() {
                     </p>
 
                     <div className="max-w-2xl mx-auto mb-12">
-                        <form onSubmit={handleSearch} className="relative">
+                        <form onSubmit={handleSearch} className="relative"
+                              onFocus={() => setIsSearchFocused(true)}
+                              onBlur={() => setIsSearchFocused(false)}
+                        >
                             <div className="relative">
                                 <Search
                                     className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-muted-foreground"/>
@@ -158,8 +161,6 @@ export default function HomePage() {
                                     placeholder="Search for research papers, authors, or topics..."
                                     value={query}
                                     onChange={(e) => handleQueryChange(e.target.value)}
-                                    onFocus={() => setIsSearchFocused(true)}
-                                    onBlur={() => setIsSearchFocused(false)}
                                     className="pl-12 pr-24 h-14 text-lg rounded-full border-2 focus:border-primary transition-colors"
                                 />
                                 <Button
@@ -173,13 +174,13 @@ export default function HomePage() {
                             </div>
 
                             {/* Search Suggestions */}
-                            {showSuggestions && suggestions.length > 0  && isSearchFocused && (
+                            {showSuggestions && suggestions.length > 0 && isSearchFocused && (
                                 <div
                                     className="absolute top-full left-0 right-0 mt-2 bg-background border border-border rounded-lg shadow-lg z-50">
                                     {suggestions.map((suggestion, index) => (
                                         <button
                                             key={index}
-                                            onClick={() => handleSuggestionClick(suggestion)}
+                                            onMouseDown={() => handleSuggestionClick(suggestion)}
                                             className="w-full text-left px-4 py-3 hover:cursor-pointer hover:bg-muted dark:hover:bg-gray-800 transition-colors first:rounded-t-lg last:rounded-b-lg"
                                         >
                                             {suggestion}
