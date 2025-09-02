@@ -10,6 +10,8 @@ import os
 from dotenv import load_dotenv
 from sqlalchemy import text
 
+
+
 # Load environment variables
 load_dotenv()
 

@@ -501,44 +501,16 @@ export default function SearchPage() {
                                                         variant="default"
                                                         size="default"
                                                         onClick={async () => {
-                                                            try {
-                                                                // Call the smart paper access API
-                                                                const response = await fetch('http://localhost:8000/api/v1/papers/access', {
-                                                                    method: 'POST',
-                                                                    headers: {
-                                                                        'Content-Type': 'application/json',
-                                                                    },
-                                                                    body: JSON.stringify({
-                                                                        title: selectedPaper.title,
-                                                                        authors: selectedPaper.authors
-                                                                    })
-                                                                });
 
-                                                                if (response.ok) {
-                                                                    const result = await response.json();
-                                                                    if (result.success) {
-                                                                        // Open the URL in a new tab
-                                                                        window.open(result.url, '_blank');
-                                                                    }
-                                                                } else {
-                                                                    // Fallback to direct DOI if available, otherwise Google Scholar
-                                                                    if (selectedPaper.doi) {
-                                                                        window.open(`https://doi.org/${selectedPaper.doi}`, '_blank');
-                                                                    } else {
-                                                                        const query = encodeURIComponent(`${selectedPaper.title} ${selectedPaper.authors.join(' ')}`);
-                                                                        window.open(`https://scholar.google.com/scholar?q=${query}`, '_blank');
-                                                                    }
-                                                                }
-                                                            } catch (error) {
-                                                                console.error('Failed to access paper:', error);
-                                                                // Fallback to direct DOI if available, otherwise Google Scholar
-                                                                if (selectedPaper.doi) {
-                                                                    window.open(`https://doi.org/${selectedPaper.doi}`, '_blank');
-                                                                } else {
-                                                                    const query = encodeURIComponent(`${selectedPaper.title} ${selectedPaper.authors.join(' ')}`);
-                                                                    window.open(`https://scholar.google.com/scholar?q=${query}`, '_blank');
-                                                                }
+                                                            const queryParams = {
+                                                                title: selectedPaper?.title,
+                                                                authors: selectedPaper?.authors?.join(","),
+                                                                paper_id: selectedPaper?.paper_id
                                                             }
+
+                                                            const searchParams = new URLSearchParams(queryParams).toString();
+
+                                                            window.open(`/search/crossref-loading?${searchParams}`, "_blank")
                                                         }}
                                                     >
                                                         <ExternalLink className="w-4 h-4 mr-2"/>

@@ -34,6 +34,8 @@ class Paper(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
+    url = Column(String(2048), nullable=True, index=True)
+
     # Relationships
     authors = relationship("Author", secondary="paper_authors", back_populates="papers")
     references = relationship("Reference", foreign_keys="Reference.citing_paper_id", back_populates="citing_paper")

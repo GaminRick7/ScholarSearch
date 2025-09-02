@@ -905,20 +905,34 @@ async def suggest_search(text: str, db: Session = Depends(get_db)) -> list[str]:
 
 
 @app.post('/api/v1/papers/access')
-async def access_paper(request: dict):
+async def access_paper(request: dict, db: Session = Depends(get_db)):
     """
     Smart paper access endpoint that tries DOI first, then falls back to Google Scholar.
     """
-    try:
-        title = request.get('title', '')
-        authors = request.get('authors', [])
+    title = request.get('title', '')
+    authors = request.get('authors', [])
+    paper_id = request.get("id")
 
-        if not title:
-            raise HTTPException(status_code=400, detail="Paper title is required")
+    if not title or not authors or not paper_id:
+        print('HERE')
+        raise HTTPException(status_code=400, detail="Paper title is required")
+
+    try:
+        db_paper = db.query(Paper).filter_by(id=paper_id).first()
+
+        if db_paper.url:
+            print("DOI Found in DB")
+            return {
+                "success": True,
+                "url": db_paper.url,
+                "source": "doi",
+                "message": "Found paper via DOI in database"
+            }
 
         # Try to find DOI via CrossRef API
         primary_author = authors[0] if authors else ""
         url = f"https://api.crossref.org/works?query.title={quote(title)}&query.author={quote(primary_author)}"
+        print(url)
 
         try:
             response = requests.get(url, timeout=10)
@@ -932,6 +946,8 @@ async def access_paper(request: dict):
 
                 # Check if titles are similar (partial match)
                 if doi_url and _is_partial_match(title, doi_title):
+                    db_paper.url = doi_url
+                    db.commit()
                     return {
                         "success": True,
                         "url": doi_url,
