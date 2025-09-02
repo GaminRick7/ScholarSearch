@@ -47,7 +47,16 @@ pnpm dev       # or npm run dev
 # Frontend: http://localhost:3000
 ```
 
-Then, run the backend. In the `src` directory, run:
+Then, run the backend. 
+
+In the root directory, start a python virtual environment and install requirements:
+```bash
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+In the `src` directory, run:
 ```bash
 python run.py
 ```
@@ -75,7 +84,15 @@ CHROMA_HOST=localhost
 CHROMA_PORT=8001
 ```
 
-3) Start backend (FastAPI). In the `src` directory, run:
+3) Start backend (FastAPI).
+In the root directory, start a python virtual environment and install requirements:
+```bash
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+In the `src` directory, run:
 ```bash
 python run.py
 ```
